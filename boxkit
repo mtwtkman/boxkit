@@ -4,13 +4,23 @@
 
 function usage
 {
-  echo "Usage: DISTROBOX_CONTAINER_NAME=<distrbox container name> ./boxkit"
+  echo "boxkit is a helper tool for building development environment by using distrobox."
+  echo ""
+  echo "Usage: DISTROBOX_CONTAINER_NAME=<distrobox container name> [DISTROBOX_HOME_NAME=<distrobox custom home directory >] [BOX_SCRIPT_NAME=<helper script name>] [DISTROBOX_IMAGE_NAME=<distrobox image>] ./boxkit"
+  echo ""
+  echo "Required parameter"
+  echo "  DISTROBOX_CONTAINER_NAME"
+  echo ""
+  echo "Optional parameters"
+  echo "  DISTROBOX_HOME_NAME  (default: .distrobox/home)"
+  echo "  BOX_SCRIPT_NAME      (default: box)"
+  echo "  DISTROBOX_IMAGE_NAME (default: docker.io/library/archlinux:latest)"
 }
 
 container_name="${DISTROBOX_CONTAINER_NAME:-}"
 home_name="${DISTROBOX_HOME_NAME:-.distrobox/home}"
 box_script_name="${BOX_SCRIPT_NAME:-box}"
-image_name="${DISTROBXO_IMAGE_NAME}:-docker.io/library/archlinux:latest"
+image_name="${DISTROBOX_IMAGE_NAME}:-docker.io/library/archlinux:latest"
 
 [ ! "${container_name}" ] && usage && exit 1
 
