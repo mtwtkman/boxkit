@@ -1,0 +1,146 @@
+#!/bin/sh
+
+! command -v "distrobox" &>/dev/null && echo "`distrobox` not found." && exit 1
+
+function usage
+{
+  echo "Usage: DISTROBOX_CONTAINER_NAME=<distrbox container name> ./boxkit"
+}
+
+container_name="${DISTROBOX_CONTAINER_NAME:-}"
+home_name="${DISTROBOX_HOME_NAME:-.distrobox/home}"
+box_script_name="${BOX_SCRIPT_NAME:-box}"
+image_name="${DISTROBXO_IMAGE_NAME}:-docker.io/library/archlinux:latest"
+
+[ ! "${container_name}" ] && usage && exit 1
+
+function create_with_confirmation
+{
+  local target=$1
+  local target_exists="$([ -e ${target} ] && echo '0' )"
+  yn="y"
+  [ "${target_exists}" = "0" ] && read -p "Do you want to recreate ${target}? [y/n]> " yn
+  [ "${target_exists}" = "0" ] && [ "${yn}" != 'y' ] && return
+  [ "${target_exsits}" = "0" ] && /bin/rm -rf $target
+
+  shift
+  eval "$@"
+  echo "create ${target}."
+}
+
+function generate_distrobox_manifest
+{
+  cat <<EOF > .distrobox.ini
+[ternip-dev]
+image=\${image_name}
+additional_packages="fd fzf git neovim ripgrep mise make gcc bat"
+home=\`pwd\`/.distrobox/home/
+init_hooks=export XDG_CONFIG_HOME=\`pwd\`/.distrobox/home/.config
+init_hooks=export XDG_CACHE_HOME=\`pwd\`/.distrobox/home/.cache
+init_hooks=export XDG_STATE_HOME=\`pwd\`/.distrobox/home/.local/state
+init_hooks=export XDG_DATA_HOME=\`pwd\`/.distrobox/home/.local/share
+EOF
+}
+
+function generate_box_script
+{
+cat <<BOX > $box_script_name
+#!/bin/sh
+
+function create_box
+{
+  [ "\${CONTAINER_ID}" ] && return
+  distrobox assemble rm --file .distrobox.ini
+  distrobox assemble create --file .distrobox.ini
+}
+
+function create_symlink
+{
+  [ -L "\${2}/\${3}" ] && return
+
+  ln -s "\${1}" "\${2}"
+}
+
+function initialize_box
+{
+  [ "\$#" = 1 ] && [ "\$1" = "-f" ] && unset BOX_INITIALIZED
+  [ "\${BOX_INITIALIZED}" ] && echo "Already initialized bye." && exit 0
+
+  create_symlink \${DISTROBOX_HOST_HOME}/.ssh \${HOME} ".ssh"
+  create_symlink \${DISTROBOX_HOST_HOME}/.config/nvim \${XDG_CONFIG_HOME} "nvim"
+  create_symlink \${DISTROBOX_HOST_HOME}/.config/git \${XDG_CONFIG_HOME} "git"
+  create_symlink \${DISTROBOX_HOST_HOME}/.config/bat \${XDG_CONFIG_HOME} "bat"
+
+  cat <<EOF > ~/.bashrc
+#!/bin/sh
+
+export BOX_INITIALIZED=1
+
+alias l="ls -CF"
+alias la="ls -A"
+alias ll="ls -alF"
+alias vim="nvim"
+
+source /usr/share/bash-completion//bash_completion
+source /usr/share/bash-completion/completions/git
+source /usr/share/git/completion/git-completion.bash
+source /usr/share/git/completion/git-prompt.sh
+
+eval "\$(\$(whereis -b mise | cut -d ' ' -f 2) activate bash)"
+
+export FZF_DEFAULT_COMMAND="rg --files --no-ignore --hidden --follow -g \"!{.git,node_modules}/*\" 2> /dev/null"
+export FZF_DEFAULT_OPTS="""
+--reverse
+--extended
+--multi
+--inline-info
+--prompt='fzf>'
+--ansi
+--preview='bat --style=full --color=always {}'
+--bind=ctrl-f:page-down,ctrl-b:page-up,'ctrl-v:become(vim {})',ctrl-^:first,ctrl-/:last
+--color=bg+:#313244,spinner:#f5e0dc,hl:#f38ba8
+--color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
+--color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8
+"""
+export FZF_CTRL_T_COMMAND="\\${FZF_DEFAULT_COMMAND}"
+
+export GIT_PS1_SHOWCOLORHINTS=true
+ps1_git='\$(__git_ps1 " (%s)")'
+ps1_distrobox="鋐・: \e[33m\${CONTAINER_ID}\e[0m"
+export PS1="\w\${ps1_git} - \${ps1_distrobox}\n\$ "
+EOF
+
+  echo "generated ~.bashrc"
+
+  mise trust
+  mise install
+  rm -rf .venv
+  uv venv
+  uv run
+  pushd assets/js
+  npm i
+  popd
+}
+
+case "\${cmd}" in
+  box)
+    [ "\${CONTAINER_ID}" ] && exit 0
+    [ ! "\$(distrobox list | rg ${container_name})" ] && create_box
+    [ "\$#" = 1 ] && [ "\$1" = "-r" ] && create_box
+    distrobox enter "${container_name}"
+    ;;
+  box:init)
+    [ ! "\${CONTAINER_ID}" ] && exit 0
+    initialize_box \$@
+    ;;
+  *) echo \$@;;
+esac
+BOX
+}
+
+create_with_confirmation $home_name "mkdir -p $home_name"
+create_with_confirmation ".distrobox.ini" "generate_distrobox_manifest"
+create_with_confirmation $box_script_name "generate_box_script"
+chmod +x $box_script_name
+
+echo "run ./${box_script_name}"
