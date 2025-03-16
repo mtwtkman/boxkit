@@ -10,10 +10,14 @@ function usage
   echo "Usage: [DISTROBOX_CONTAINER_NAME=<distrobox container name>] [DISTROBOX_HOME_NAME=<distrobox custom home directory >] [BOX_SCRIPT_NAME=<helper script name>] [DISTROBOX_IMAGE_NAME=<distrobox image>] ./boxkit"
   echo ""
   echo "Parameters"
-  echo "  * DISTROBOX_CONTAINER_NAME  (If it wan't set then boxkit prompt asks you it.)"
-  echo "  * DISTROBOX_HOME_NAME       (default: .distrobox/home)"
-  echo "  * BOX_SCRIPT_NAME           (default: box)"
-  echo "  * DISTROBOX_IMAGE_NAME      (default: docker.io/library/archlinux:latest)"
+  echo "  * DISTROBOX_CONTAINER_NAME"
+  echo "    If it wan't set then boxkit prompt asks you it."
+  echo "  * DISTROBOX_HOME_NAME"
+  echo "    default: '.distrobox/home'"
+  echo "  * BOX_SCRIPT_NAME"
+  echo "    default: 'box'"
+  echo "  * DISTROBOX_IMAGE_NAME"
+  echo "    default: Your distrobox config"
 }
 
 [ ! $# = 0 ] && echo "You can't pass any arguments. Usage here." && usage && exit 0
@@ -27,7 +31,7 @@ done
 
 home_name="${DISTROBOX_HOME_NAME:-.distrobox/home}"
 box_script_name="${BOX_SCRIPT_NAME:-box}"
-image_name="${DISTROBOX_IMAGE_NAME:-docker.io/library/archlinux:latest}"
+image_name="${DISTROBOX_IMAGE_NAME}"
 
 function create_with_confirmation
 {
@@ -45,15 +49,15 @@ function create_with_confirmation
 
 function generate_distrobox_manifest
 {
-  cat <<EOF > .distrobox.ini
-[${container_name}]
-image=${image_name}
+  echo "[${container_name}]" > .distrobox.ini
+  [ "${image_name}" ] && echo $"image=${image_name}" >> .distrobox.ini
+  cat <<EOF >> .distrobox.ini
 additional_packages="fd fzf git neovim ripgrep mise make gcc bat"
-home=\`pwd\`/.distrobox/home/
-init_hooks=export XDG_CONFIG_HOME=\`pwd\`/.distrobox/home/.config
-init_hooks=export XDG_CACHE_HOME=\`pwd\`/.distrobox/home/.cache
-init_hooks=export XDG_STATE_HOME=\`pwd\`/.distrobox/home/.local/state
-init_hooks=export XDG_DATA_HOME=\`pwd\`/.distrobox/home/.local/share
+home=\`pwd\`/${home_name}
+init_hooks=export XDG_CONFIG_HOME=\`pwd\`/${home_name}/.config
+init_hooks=export XDG_CACHE_HOME=\`pwd\`/${home_name}/.cache
+init_hooks=export XDG_STATE_HOME=\`pwd\`/${home_name}/.local/state
+init_hooks=export XDG_DATA_HOME=\`pwd\`/${home_name}/.local/share
 EOF
 }
 
@@ -69,6 +73,7 @@ shift
 function create_box
 {
   [ "\${CONTAINER_ID}" ] && return
+  /bin/rm -rf ${home_name}
   [ "\$(distrobox list | rg ${container_name})" ] && distrobox assemble rm --file .distrobox.ini
   [ ! "\$(distrobox list | rg ${container_name})" ] && distrobox assemble create --file .distrobox.ini
 }
@@ -77,6 +82,7 @@ function create_symlink
 {
   [ -L "\${2}/\${3}" ] && return
 
+  [ ! -e "\${1}" ] && echo "Cannot find source path. So do nothing. (\${1})" && return
   ln -s "\${1}" "\${2}"
 }
 
@@ -105,7 +111,7 @@ source /usr/share/bash-completion/completions/git
 source /usr/share/git/completion/git-completion.bash
 source /usr/share/git/completion/git-prompt.sh
 
-eval "\$(\$(whereis -b mise | cut -d ' ' -f 2) activate bash)"
+eval "\\\$(\\\$(whereis -b mise | cut -d ' ' -f 2) activate bash)"
 
 export FZF_DEFAULT_COMMAND="rg --files --no-ignore --hidden --follow -g \"!{.git,node_modules}/*\" 2> /dev/null"
 export FZF_DEFAULT_OPTS="""
@@ -124,9 +130,9 @@ export FZF_DEFAULT_OPTS="""
 export FZF_CTRL_T_COMMAND="\\${FZF_DEFAULT_COMMAND}"
 
 export GIT_PS1_SHOWCOLORHINTS=true
-ps1_git='\$(__git_ps1 " (%s)")'
-ps1_distrobox="鋐・: \e[33m\${CONTAINER_ID}\e[0m"
-export PS1="\w\${ps1_git} - \${ps1_distrobox}\n\$ "
+ps1_git='\\\$(__git_ps1 " (%s)")'
+ps1_distrobox=" : \e[33m\${CONTAINER_ID}\e[0m"
+export PS1="\w\\\${ps1_git} - \\\${ps1_distrobox}\n\$ "
 EOF
 
   echo "generated ~.bashrc"
@@ -137,18 +143,35 @@ EOF
   mise install
 }
 
+function show_box_script_usage
+{
+  echo ""
+  echo "${box_script_name} is a thin wrapper to manipulate distrobox handy."
+  echo ""
+  echo "Usage: ./${box_script_name} [COMMAND] [OPTION]"
+  echo ""
+  echo "Commands"
+  echo "  * enter|e [-r]"
+  echo "    Enter your development container via distrobox. If the continer have not existed, ${script_name} will create it."
+  echo "    You can pass -r option to recreate the container then ${home_name} will be recreated also."
+  echo "  * init|i [-f]"
+  echo "    Initialize your development container. You should run command in your development container at first."
+  echo "    This command will deploy .bashrc and some configs(Current targets are nvim, bat and git)"
+  echo "    You can pass -f option to force initialize again."
+}
+
 case "\${cmd}" in
-  init|i)
-    [ ! "\${CONTAINER_ID}" ] && exit 0
-    initialize_box \$@
-    ;;
   enter|e)
     [ "\${CONTAINER_ID}" ] && exit 0
     [ ! "\$(distrobox list | rg ${container_name})" ] && create_box
     [ "\$#" = 1 ] && [ "\$1" = "-r" ] && create_box
     distrobox enter "${container_name}"
     ;;
-  *) echo \$@;;
+  init|i)
+    [ ! "\${CONTAINER_ID}" ] && exit 0
+    initialize_box \$@
+    ;;
+  *) show_box_script_usage;;
 esac
 BOX
 }
@@ -158,4 +181,4 @@ create_with_confirmation ".distrobox.ini" "generate_distrobox_manifest"
 create_with_confirmation $box_script_name "generate_box_script"
 chmod +x $box_script_name
 
-echo "run ./${box_script_name}"
+echo "Now you can run ./${box_script_name}"
