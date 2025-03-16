@@ -42,7 +42,7 @@ function generate_distrobox_manifest
 {
   cat <<EOF > .distrobox.ini
 [ternip-dev]
-image=\${image_name}
+image=${image_name}
 additional_packages="fd fzf git neovim ripgrep mise make gcc bat"
 home=\`pwd\`/.distrobox/home/
 init_hooks=export XDG_CONFIG_HOME=\`pwd\`/.distrobox/home/.config
