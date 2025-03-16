@@ -57,7 +57,7 @@ function generate_box_script
 cat <<BOX > $box_script_name
 #!/bin/sh
 
-cmd="$1"
+cmd="\$1"
 
 shift
 
