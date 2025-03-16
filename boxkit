@@ -131,14 +131,10 @@ EOF
 
   echo "generated ~.bashrc"
 
+  [ ! -f "mise.toml" ] && return
+
   mise trust
   mise install
-  rm -rf .venv
-  uv venv
-  uv run
-  pushd assets/js
-  npm i
-  popd
 }
 
 case "\${cmd}" in
