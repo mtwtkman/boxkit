@@ -27,7 +27,7 @@ done
 
 home_name="${DISTROBOX_HOME_NAME:-.distrobox/home}"
 box_script_name="${BOX_SCRIPT_NAME:-box}"
-image_name="${DISTROBOX_IMAGE_NAME}:-docker.io/library/archlinux:latest"
+image_name="${DISTROBOX_IMAGE_NAME:-docker.io/library/archlinux:latest}"
 
 function create_with_confirmation
 {
