@@ -4,25 +4,30 @@
 
 function usage
 {
+  echo ""
   echo "boxkit is a helper tool for building development environment by using distrobox."
   echo ""
-  echo "Usage: DISTROBOX_CONTAINER_NAME=<distrobox container name> [DISTROBOX_HOME_NAME=<distrobox custom home directory >] [BOX_SCRIPT_NAME=<helper script name>] [DISTROBOX_IMAGE_NAME=<distrobox image>] ./boxkit"
+  echo "Usage: [DISTROBOX_CONTAINER_NAME=<distrobox container name>] [DISTROBOX_HOME_NAME=<distrobox custom home directory >] [BOX_SCRIPT_NAME=<helper script name>] [DISTROBOX_IMAGE_NAME=<distrobox image>] ./boxkit"
   echo ""
-  echo "Required parameter"
-  echo "  DISTROBOX_CONTAINER_NAME"
-  echo ""
-  echo "Optional parameters"
-  echo "  DISTROBOX_HOME_NAME  (default: .distrobox/home)"
-  echo "  BOX_SCRIPT_NAME      (default: box)"
-  echo "  DISTROBOX_IMAGE_NAME (default: docker.io/library/archlinux:latest)"
+  echo "Parameters"
+  echo "  * DISTROBOX_CONTAINER_NAME  (If it wan't set then boxkit prompt asks you it.)"
+  echo "  * DISTROBOX_HOME_NAME       (default: .distrobox/home)"
+  echo "  * BOX_SCRIPT_NAME           (default: box)"
+  echo "  * DISTROBOX_IMAGE_NAME      (default: docker.io/library/archlinux:latest)"
 }
 
+[ ! $# = 0 ] && echo "You can't pass any arguments. Usage here." && usage && exit 0
+
 container_name="${DISTROBOX_CONTAINER_NAME:-}"
+
+while [ ! "${container_name}"  ]
+do
+  read -p "What do you want to name container? > " container_name
+done
+
 home_name="${DISTROBOX_HOME_NAME:-.distrobox/home}"
 box_script_name="${BOX_SCRIPT_NAME:-box}"
 image_name="${DISTROBOX_IMAGE_NAME}:-docker.io/library/archlinux:latest"
-
-[ ! "${container_name}" ] && usage && exit 1
 
 function create_with_confirmation
 {
@@ -41,7 +46,7 @@ function create_with_confirmation
 function generate_distrobox_manifest
 {
   cat <<EOF > .distrobox.ini
-[ternip-dev]
+[${container_name}]
 image=${image_name}
 additional_packages="fd fzf git neovim ripgrep mise make gcc bat"
 home=\`pwd\`/.distrobox/home/
