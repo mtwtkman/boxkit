@@ -133,15 +133,15 @@ EOF
 }
 
 case "\${cmd}" in
-  box)
+  init|i)
+    [ ! "\${CONTAINER_ID}" ] && exit 0
+    initialize_box \$@
+    ;;
+  enter|e)
     [ "\${CONTAINER_ID}" ] && exit 0
     [ ! "\$(distrobox list | rg ${container_name})" ] && create_box
     [ "\$#" = 1 ] && [ "\$1" = "-r" ] && create_box
     distrobox enter "${container_name}"
-    ;;
-  box:init)
-    [ ! "\${CONTAINER_ID}" ] && exit 0
-    initialize_box \$@
     ;;
   *) echo \$@;;
 esac

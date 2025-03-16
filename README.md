@@ -13,4 +13,4 @@ Optional parameters
 ```
 
 # Quick start
-curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | BOX_CONTAINER_NAME=<distrobox container name> sh -s
+curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | DISTROBOX_CONTAINER_NAME=distrobox_container_name sh -s
