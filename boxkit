@@ -69,8 +69,8 @@ shift
 function create_box
 {
   [ "\${CONTAINER_ID}" ] && return
-  distrobox assemble rm --file .distrobox.ini
-  distrobox assemble create --file .distrobox.ini
+  [ "\$(distrobox list | rg ${container_name})" ] && distrobox assemble rm --file .distrobox.ini
+  [ ! "\$(distrobox list | rg ${container_name})" ] && distrobox assemble create --file .distrobox.ini
 }
 
 function create_symlink
