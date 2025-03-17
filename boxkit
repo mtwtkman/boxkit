@@ -159,6 +159,8 @@ function show_box_script_usage
   echo "    Initialize your development container. You should run command in your development container at first."
   echo "    This command will deploy .bashrc and some configs(Current targets are nvim, bat and git)"
   echo "    You can pass -f option to force initialize again."
+  echo "  * stop"
+  echo "    Stop the development container."
 }
 
 case "\${cmd}" in
@@ -171,6 +173,11 @@ case "\${cmd}" in
   init|i)
     [ ! "\${CONTAINER_ID}" ] && exit 0
     initialize_box \$@
+    ;;
+  stop)
+    [ ! "\${CONTAINER_ID}" ] && exit 0
+    [ ! "\$(distrobox list | rg ${container_name})" ] && exit 0
+    distrobox stop ${container_name}
     ;;
   *) show_box_script_usage;;
 esac
