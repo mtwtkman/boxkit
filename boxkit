@@ -22,12 +22,30 @@ function usage
 
 [ ! $# = 0 ] && echo "You can't pass any arguments. Usage here." && usage && exit 0
 
-container_name="${DISTROBOX_CONTAINER_NAME:-}"
+default_container_name="$(basename $(realpath $(pwd)))-dev"
 
-while [ ! "${container_name}"  ]
-do
-  read -p "What do you want to name container? > " container_name
-done
+echo "$default_container_name"
+
+container_name="${DISTROBOX_CONTAINER_NAME:-${default_container_name}}"
+
+fixed_container_name=""
+
+if [ ! "${DISTROBOX_CONTAINER_NAME}" ]; then
+  while ([ "${fixed_container_name}" != "y" ] && [ "${fixed_container_name}" != "n" ])
+  do
+    read -p "Boxkit detect the container name '${container_name}'. Are you sure? [y/n] > " fixed_container_name
+  done
+fi
+
+if [ "${fixed_container_name}" = "n" ]; then
+  container_name=""
+  while [ ! "${container_name}"  ]
+  do
+    read -p "What do you want to name container? > " container_name
+  done
+fi
+
+echo -e "Your development container name is \e[33m${container_name}\e[0m"
 
 home_name="${DISTROBOX_HOME_NAME:-.distrobox/home}"
 box_script_name="${BOX_SCRIPT_NAME:-box}"
@@ -44,7 +62,7 @@ function create_with_confirmation
 
   shift
   eval "$@"
-  echo "create ${target}."
+  echo -e "create \e[33m${target}.\e[0m"
 }
 
 function generate_distrobox_manifest
@@ -189,4 +207,4 @@ create_with_confirmation ".distrobox.ini" "generate_distrobox_manifest"
 create_with_confirmation $box_script_name "generate_box_script"
 chmod +x $box_script_name
 
-echo "Now you can run ./${box_script_name}"
+echo 'Now you can run `./box enter` to start distrobox.'
