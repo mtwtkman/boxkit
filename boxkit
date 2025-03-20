@@ -22,27 +22,13 @@ function usage
 
 [ ! $# = 0 ] && echo "You can't pass any arguments. Usage here." && usage && exit 0
 
-default_container_name="$(basename $(realpath $(pwd)))-dev"
-
-echo "$default_container_name"
-
-container_name="${DISTROBOX_CONTAINER_NAME:-${default_container_name}}"
-
-fixed_container_name=""
+container_name="$(basename $(realpath $(pwd)))-dev"
 
 if [ ! "${DISTROBOX_CONTAINER_NAME}" ]; then
-  while ([ "${fixed_container_name}" != "y" ] && [ "${fixed_container_name}" != "n" ])
-  do
-    read -p "Boxkit detect the container name '${container_name}'. Are you sure? [y/n] > " fixed_container_name
-  done
-fi
-
-if [ "${fixed_container_name}" = "n" ]; then
-  container_name=""
-  while [ ! "${container_name}"  ]
-  do
-    read -p "What do you want to name container? > " container_name
-  done
+  read -p "Please input name for your development containe if you want. (default: ${container_name}) > " user_input_container_name
+  [ ! -z "${user_input_container_name}" ] && container_name="${user_input_container_name}"
+else
+  container_name="${DISTROBOX_CONTAINER_NAME}"
 fi
 
 echo -e "Your development container name is \e[33m${container_name}\e[0m"
