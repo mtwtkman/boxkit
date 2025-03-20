@@ -70,6 +70,27 @@ function generate_box_script
 cat <<BOX > $box_script_name
 #!/bin/sh
 
+function show_box_script_usage
+{
+  echo ""
+  echo "${box_script_name} is a thin wrapper to manipulate distrobox handy."
+  echo ""
+  echo "Usage: ./${box_script_name} [COMMAND] [OPTION]"
+  echo ""
+  echo "Commands"
+  echo "  * enter|e [-r]"
+  echo "    Enter your development container via distrobox. If the continer have not existed, ${script_name} will create it."
+  echo "    You can pass -r option to recreate the container then ${home_name} will be recreated also."
+  echo "  * init|i [-f]"
+  echo "    Initialize your development container. You should run command in your development container at first."
+  echo "    This command will deploy .bashrc and some configs(Current targets are nvim, bat and git)"
+  echo "    You can pass -f option to force initialize again."
+  echo "  * stop"
+  echo "    Stop the development container."
+}
+
+[ \$# = 0 ] && show_box_script_usage && exit 0
+
 cmd="\$1"
 
 shift
@@ -148,25 +169,6 @@ EOF
   mise install
 }
 
-function show_box_script_usage
-{
-  echo ""
-  echo "${box_script_name} is a thin wrapper to manipulate distrobox handy."
-  echo ""
-  echo "Usage: ./${box_script_name} [COMMAND] [OPTION]"
-  echo ""
-  echo "Commands"
-  echo "  * enter|e [-r]"
-  echo "    Enter your development container via distrobox. If the continer have not existed, ${script_name} will create it."
-  echo "    You can pass -r option to recreate the container then ${home_name} will be recreated also."
-  echo "  * init|i [-f]"
-  echo "    Initialize your development container. You should run command in your development container at first."
-  echo "    This command will deploy .bashrc and some configs(Current targets are nvim, bat and git)"
-  echo "    You can pass -f option to force initialize again."
-  echo "  * stop"
-  echo "    Stop the development container."
-}
-
 case "\${cmd}" in
   enter|e)
     [ "\${CONTAINER_ID}" ] && exit 0
@@ -179,7 +181,7 @@ case "\${cmd}" in
     initialize_box \$@
     ;;
   stop)
-    [ ! "\${CONTAINER_ID}" ] && exit 0
+    [ "\${CONTAINER_ID}" ] && exit 0
     [ ! "\$(distrobox list | rg ${container_name})" ] && exit 0
     distrobox stop ${container_name}
     ;;
