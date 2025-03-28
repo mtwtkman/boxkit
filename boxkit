@@ -172,6 +172,8 @@ export FZF_DEFAULT_OPTS="""
 """
 export FZF_CTRL_T_COMMAND="\\${FZF_DEFAULT_COMMAND}"
 
+eval "$(fzf --bash)"
+
 export GIT_PS1_SHOWCOLORHINTS=true
 ps1_git='\\\$(__git_ps1 " (%s)")'
 ps1_distrobox=" : \e[33m\${CONTAINER_ID}\e[0m"
