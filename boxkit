@@ -180,7 +180,7 @@ ps1_distrobox=" : \e[33m\${CONTAINER_ID}\e[0m"
 export PS1="\w\\\${ps1_git} - \\\${ps1_distrobox}\n\$ "
 EOF
 
-  echo "generated ~.bashrc"
+  echo "generated ~/.bashrc"
 
   [ ! -f "mise.toml" ] && return
 
