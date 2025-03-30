@@ -1,0 +1,13 @@
+#!/bin/sh
+
+usage="$(sh ./boxkit --help)"
+
+cat <<EOF > README.md
+# Boxkit
+\`\`\`
+${usage}
+\`\`\`
+
+# Quick start
+curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | DISTROBOX_CONTAINER_NAME=distrobox_container_name sh -s
+EOF

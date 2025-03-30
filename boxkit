@@ -31,7 +31,7 @@ function usage
   echo -e "\t\tdefault: Up to your distrobox config"
 }
 
-[ ! $# = 0 ] && echo "You can't pass any arguments. Usage here." && usage && exit 0
+[ ! $# = 0 ] && usage && exit 0
 
 container_name="$(basename $(realpath $(pwd)))-dev"
 
