@@ -154,7 +154,7 @@ source /usr/share/bash-completion/completions/git
 source /usr/share/git/completion/git-completion.bash
 source /usr/share/git/completion/git-prompt.sh
 
-eval "\\\$(mise activate bash)"
+[[ command -v "mise" &> /dev/null ]] && eval "\\\$(mise activate bash)"
 
 export FZF_DEFAULT_COMMAND="rg --files --no-ignore --hidden --follow -g \"!{.git,node_modules}/*\" 2> /dev/null"
 export FZF_DEFAULT_OPTS="""
