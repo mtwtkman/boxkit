@@ -128,17 +128,8 @@ function create_symlink
   ln -s "\${1}" "\${2}"
 }
 
-function initialize_box
+function generate_bashrc
 {
-  [ "\$#" = 1 ] && [ "\$1" = "-f" ] && unset BOX_INITIALIZED
-  [ "\${BOX_INITIALIZED}" ] && echo "Already initialized bye." && exit 0
-  [ ! -d "\${XDG_CONFIG_HOME}" ] && mkdir "\${XDG_CONFIG_HOME}"
-
-  create_symlink \${DISTROBOX_HOST_HOME}/.ssh "\${HOME}/.ssh"
-  create_symlink \${DISTROBOX_HOST_HOME}/.config/nvim "\${XDG_CONFIG_HOME}/nvim"
-  create_symlink \${DISTROBOX_HOST_HOME}/.config/git "\${XDG_CONFIG_HOME}/git"
-  create_symlink \${DISTROBOX_HOST_HOME}/.config/bat "\${XDG_CONFIG_HOME}/bat"
-
   cat <<EOF > ~/.bashrc
 #!/bin/sh
 
@@ -179,6 +170,20 @@ ps1_git='\\\$(__git_ps1 " (%s)")'
 ps1_distrobox=" : \e[33m\${CONTAINER_ID}\e[0m"
 export PS1="\w\\\${ps1_git} - \\\${ps1_distrobox}\n\$ "
 EOF
+}
+
+function initialize_box
+{
+  [ "\$#" = 1 ] && [ "\$1" = "-f" ] && unset BOX_INITIALIZED
+  [ "\${BOX_INITIALIZED}" ] && echo "Already initialized bye." && exit 0
+  [ ! -d "\${XDG_CONFIG_HOME}" ] && mkdir "\${XDG_CONFIG_HOME}"
+
+  create_symlink \${DISTROBOX_HOST_HOME}/.ssh "\${HOME}/.ssh"
+  create_symlink \${DISTROBOX_HOST_HOME}/.config/nvim "\${XDG_CONFIG_HOME}/nvim"
+  create_symlink \${DISTROBOX_HOST_HOME}/.config/git "\${XDG_CONFIG_HOME}/git"
+  create_symlink \${DISTROBOX_HOST_HOME}/.config/bat "\${XDG_CONFIG_HOME}/bat"
+
+  generate_bashrc
 
   echo "generated ~/.bashrc"
 
@@ -199,6 +204,7 @@ case "\${cmd}" in
     [ ! "\${CONTAINER_ID}" ] && exit 0
     initialize_box \$@
     ;;
+  bashrc|b) generate_bashrc;;
   stop|s)
     [ "\${CONTAINER_ID}" ] && exit 0
     [ ! "\$(distrobox list | rg ${container_name})" ] && exit 0
