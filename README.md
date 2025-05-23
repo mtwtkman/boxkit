@@ -13,7 +13,7 @@ OPTIONS:
 	BOX_ENTRYPOINT_NAME
 		The entrypoint of result objects created by boxkit.
 		This value is regarded as relative path under from a project root.
-		default: /home/mtwtkman/work/boxkit
+		default: <Project root path>
 
 	DISTROBOX_HOME_NAME
 		A name of custom home directory name for your development container.

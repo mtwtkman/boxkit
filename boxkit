@@ -3,6 +3,11 @@
 
 function usage
 {
+  if [ "${README_GEN}" ]; then
+    entrypoint_default='<Project root path>'
+  else
+    entrypoint_default="$(pwd)"
+  fi
   echo "boxkit is a helper tool for building development environment by using distrobox."
   echo ""
   echo "USAGE:"
@@ -16,7 +21,7 @@ function usage
   echo -e "\tBOX_ENTRYPOINT_NAME"
   echo -e "\t\tThe entrypoint of result objects created by boxkit."
   echo -e "\t\tThis value is regarded as relative path under from a project root."
-  echo -e "\t\tdefault: $(pwd)"
+  echo -e "\t\tdefault: ${entrypoint_default}"
   echo ""
   echo -e "\tDISTROBOX_HOME_NAME"
   echo -e "\t\tA name of custom home directory name for your development container."

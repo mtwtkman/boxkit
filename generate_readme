@@ -1,6 +1,6 @@
 #!/bin/sh
 
-usage="$(sh ./boxkit --help)"
+usage="$(README_GEN=1 sh ./boxkit --help)"
 
 cat <<EOF > README.md
 # Boxkit
