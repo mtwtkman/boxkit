@@ -28,7 +28,7 @@ function usage
   echo -e "\t\tdefault: \$BOX_ENTRYPOINT_NAME/.distrobox/home"
   echo ""
   echo -e "\tBOX_SCRIPT_NAME"
-  echo -e "\t\tThe script name of thin wrapper for distrobox."
+  echo -e "\t\tThe script name of the thin wrapper for distrobox."
   echo -e "\t\tdefault: \$BOX_ENTRYPOINT_NAME/box"
   echo ""
   echo -e "\tDISTROBOX_IMAGE_NAME"
@@ -41,7 +41,7 @@ function usage
 container_name="$(basename $(realpath $(pwd)))-dev"
 
 if [ ! "${DISTROBOX_CONTAINER_NAME}" ]; then
-  read -p "Please input name for your development containe if you want. (default: ${container_name}) > " user_input_container_name
+  read -p "Please input name for your development container if you want. (default: ${container_name}) > " user_input_container_name
   [ ! -z "${user_input_container_name}" ] && container_name="${user_input_container_name}"
 else
   container_name="${DISTROBOX_CONTAINER_NAME}"
