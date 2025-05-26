@@ -50,7 +50,7 @@ fi
 echo -e "Your development container name is \e[33m${container_name}\e[0m"
 
 box_entrypoint_path="$(readlink -f ${BOX_ENTRYPOINT_NAME:-$(pwd)})"
-distrobox_manifest_path="${box_entrypoint_path}/.distrobox.ini"
+distrobox_manifest_path="${box_entrypoint_path}/distrobox.ini"
 home_name="${box_entrypoint_path}/${DISTROBOX_HOME_NAME:-.distrobox/home}"
 box_script_name="${BOX_SCRIPT_NAME:-box}"
 box_script_path="${box_entrypoint_path}/${box_script_name}"
@@ -210,6 +210,7 @@ case "\${cmd}" in
     initialize_box \$@
     ;;
   bashrc|b) generate_bashrc;;
+  replace|r) distrobox assemble create --replace --file ${distrobox_manifest_path};;
   stop|s)
     [ "\${CONTAINER_ID}" ] && exit 0
     [ ! "\$(distrobox list | rg ${container_name})" ] && exit 0
