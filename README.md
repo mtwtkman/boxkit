@@ -20,7 +20,7 @@ OPTIONS:
 		default: $BOX_ENTRYPOINT_NAME/.distrobox/home
 
 	BOX_SCRIPT_NAME
-		The script name of thin wrapper for distrobox.
+		The script name of the thin wrapper for distrobox.
 		default: $BOX_ENTRYPOINT_NAME/box
 
 	DISTROBOX_IMAGE_NAME
@@ -29,4 +29,7 @@ OPTIONS:
 ```
 
 # Quick start
-curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | DISTROBOX_CONTAINER_NAME=distrobox_container_name sh -s
+1. Run `curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | sh -s`
+1. Run `./box e`
+1. Run `./box i`
+1. Run `. ~/.bashrc` or Re-enter the conatiner
