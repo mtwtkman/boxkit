@@ -75,7 +75,7 @@ function generate_distrobox_manifest
   echo "[${container_name}]" > $distrobox_manifest_path
   [ "${image_name}" ] && echo $"image=${image_name}" >> $distrobox_manifest_path
   cat <<EOF >> $distrobox_manifest_path
-additional_packages="fd fzf git neovim ripgrep mise make gcc bat"
+additional_packages="fd fzf git neovim ripgrep mise make gcc bat wl-clipboard"
 home=${home_name}
 init_hooks=export XDG_CONFIG_HOME=${home_name}/.config
 init_hooks=export XDG_CACHE_HOME=${home_name}/.cache
