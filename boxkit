@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 ! command -v "distrobox" &>/dev/null && echo "`distrobox` not found." && exit 1
 
 function usage
