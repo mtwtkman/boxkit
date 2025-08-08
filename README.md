@@ -29,7 +29,7 @@ OPTIONS:
 ```
 
 # Quick start
-1. Run `curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | sh -s`
+1. Run `curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | bash -s`
 1. Run `./box e`
 1. Run `./box i`
 1. Run `. ~/.bashrc` or Re-enter the conatiner

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 usage="$(README_GEN=1 sh ./boxkit --help)"
 
