@@ -1,0 +1,19 @@
+#!/bin/bash
+here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
+source "${here}/test/util.sh"
+
+export BOXKIT_TEST_VERBOSE=${V:-}
+
+for t in $(find . -type f -name "test-*.sh");
+do
+  cyan "TEST: ${t}"
+  result=$(source "${t}")
+  if is_passed ${result}; then
+    green $green "Passed ${t}"
+  else
+    red $red "Failed ${t}"
+  fi
+  echo ""
+done
+
+unset BOXKIT_TEST_VERBOSE
