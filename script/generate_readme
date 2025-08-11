@@ -1,0 +1,17 @@
+#!/bin/bash
+here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
+
+usage="$(README_GEN=1 sh ${here}/..//boxkit --help)"
+
+cat <<EOF > "${here}/../README.md"
+# Boxkit
+\`\`\`
+${usage}
+\`\`\`
+
+# Quick start
+1. Run \`curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | bash -s\`
+1. Run \`./box e\`
+1. Run \`./box i\`
+1. Run \`. ~/.bashrc\` or Re-enter the conatiner
+EOF

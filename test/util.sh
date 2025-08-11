@@ -61,3 +61,14 @@ function is_failed
 {
   ! is_passed "$1"
 }
+
+function with_testing_workspace
+{
+  testname="${1}"
+  unique_id="$(date +%s)"
+  workspace="${here}/../testing-workspace/${testname}.${unique_id}"
+  mkdir -p ${workspace}
+  result=$(run_boxkit $@)
+  /bin/rm -rm ${workspace}
+  return "${result}"
+}
