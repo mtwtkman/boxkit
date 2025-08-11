@@ -1,0 +1,24 @@
+#!/bin/bash
+here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
+
+test_root="${here}/../test"
+
+function gen
+{
+  dest="${test_root}/${1}"
+  [ -e "${dest}" ] && return
+  mkdir -p "$(dirname ${dest})"
+  cat <<EOF > "${dest}"
+#!/bin/bash
+
+here="\$(readlink -m \$(dirname \${BASH_SOURCE[0]}))"
+source "${here}/../../util.sh"
+
+EOF
+  echo "${dest}"
+}
+
+testpath="${1}"
+result=$(gen "${testpath}")
+
+echo "Created ${result}"
