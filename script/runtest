@@ -1,11 +1,15 @@
 #!/bin/bash
 here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
-source "${here}/test/util.sh"
+source "${here}/../test/util.sh"
 
 export BOXKIT_TEST_VERBOSE=${V:-}
 
+pattern="${1}"
+
 for t in $(find . -type f -name "test-*.sh");
 do
+  [[ "${pattern}" ]] && ! echo "${t}" | rg -e "${pattern}" &> /dev/null && continue
+
   cyan "TEST: ${t}"
   result=$(source "${t}")
   if is_passed ${result}; then
