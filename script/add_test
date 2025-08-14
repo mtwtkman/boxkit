@@ -6,19 +6,36 @@ test_root="${here}/../test"
 function gen
 {
   dest="${test_root}/${1}"
+  depth="${2}"
   [ -e "${dest}" ] && return
   mkdir -p "$(dirname ${dest})"
+
+  util_path="\${here}/"
+  for (( i=0; i<${depth}; i++))
+  do
+    util_path="${util_path}../"
+  done
+  util_path="${util_path}util.sh"
+
   cat <<EOF > "${dest}"
 #!/bin/bash
 
 here="\$(readlink -m \$(dirname \${BASH_SOURCE[0]}))"
-source "${here}/../../util.sh"
+source "${util_path}"
 
 EOF
   echo "${dest}"
 }
 
 testpath="${1}"
-result=$(gen "${testpath}")
 
-echo "Created ${result}"
+testpath_length="${#testpath}"
+omitted_slash_testpath="${testpath//\//}"
+omitted_slash_testpath_length="${#omitted_slash_testpath}"
+depth=$((testpath_length - omitted_slash_testpath_length))
+
+result=$(gen "${testpath}" "${depth}")
+
+[ "${result}" ] && echo "Created $(realpath ${result})" && exit 0
+
+echo "Already existed"

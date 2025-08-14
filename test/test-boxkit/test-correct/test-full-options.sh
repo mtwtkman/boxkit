@@ -1,7 +1,7 @@
 #!/bin/bash
 
 here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
-source "/home/mtwtkman/work/boxkit/script/../util.sh"
+source "${here}/../../util.sh"
 
 testname="test-full-option"
 
