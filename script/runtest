@@ -1,4 +1,5 @@
 #!/bin/bash
+
 here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
 source "${here}/../test/util.sh"
 
@@ -11,8 +12,8 @@ do
   [[ "${pattern}" ]] && ! echo "${t}" | rg -e "${pattern}" &> /dev/null && continue
 
   cyan "TEST: ${t}"
-  result=$(source "${t}")
-  if is_passed ${result}; then
+  result="$(bash "${t}"; echo $?)"
+  if is_passed "${result}"; then
     green $green "Passed ${t}"
   else
     red $red "Failed ${t}"

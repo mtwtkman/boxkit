@@ -15,6 +15,8 @@ options="${op1} ${op2} ${op3} ${op4} ${op5}"
 
 workspace=$(setup_testing_workspace "${testname}")
 
-result=$(with_testing_workspace "${options}" "")
+echo "Test in ${workspace}"
+pushd "${workspace}"
+popd
 
-teardown_testing_workspace "${workspace}"
+# teardown_testing_workspace "${workspace}"

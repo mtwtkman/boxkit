@@ -1,4 +1,5 @@
 #!/bin/bash
+
 function _message
 {
   color=$1
@@ -32,7 +33,7 @@ function run_boxkit
   options=$1
   argument=$2
   here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
-  boxkit="${here}/../boxkit"
+  boxkit="$(readlink -f ${here}/../boxkit)"
   cmd="sh ${boxkit} ${argument}"
   test "${options}" && cmd="${options} ${cmd}"
   yellow "Run: ${cmd}" >&2
@@ -42,19 +43,11 @@ function run_boxkit
   return "${result}"
 }
 
-function passed
-{
-  echo "0"
-}
-
-function failed
-{
-  echo "1"
-}
+PASSED="0"
 
 function is_passed
 {
-  test "$1" == $(passed)
+  test "$1" == "$PASSED" &> /dev/null
 }
 
 function is_failed
@@ -66,14 +59,13 @@ function setup_testing_workspace
 {
   testname="${1}"
   unique_id="$(date +%s)"
-  workspace="${here}/../testing-workspace/${testname}.${unique_id}"
+  workspace="/tmp/boxkit-test/${testname}.${unique_id}"
   mkdir -p "${workspace}"
-  cd "${workspace}"
-  return "${workspace}"
+  echo "${workspace}"
 }
 
 function teardown_testing_workspace
 {
   workspace="${1}"
-  /bin/rm -rm ${workspace}
+  /bin/rm -rf ${workspace}
 }

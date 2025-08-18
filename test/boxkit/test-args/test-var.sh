@@ -1,4 +1,5 @@
 #!/bin/bash
+
 here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
 
 source "${here}/../../util.sh"
@@ -6,10 +7,10 @@ source "${here}/../../util.sh"
 actual=$(run_boxkit "" "help")
 result="$?"
 
-if is_failed "$?"; then
-  echo $?
+if is_failed "${result}"; then
+  exit $?
 elif [[ $(echo "${actual}" | grep -E 'USAGE:') ]]; then
-  passed
+  exit $PASSED
 else
-  failed
+  exit $FAILED
 fi
