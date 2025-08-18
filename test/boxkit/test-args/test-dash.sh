@@ -7,9 +7,9 @@ actual=$(run_boxkit "" "--help")
 result="$?"
 
 if is_failed "$?"; then
-  echo $?
+  exit $?
 elif [[ $(echo "${actual}" | grep -E 'USAGE:') ]]; then
-  passed
+  exit $PASSED
 else
-  failed
+  exit $FAILED
 fi
