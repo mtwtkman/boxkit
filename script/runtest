@@ -12,7 +12,8 @@ do
   [[ "${pattern}" ]] && ! echo "${t}" | rg -e "${pattern}" &> /dev/null && continue
 
   cyan "TEST: ${t}"
-  result="$(bash "${t}"; echo $?)"
+  bash "${t}"
+  result="$?"
   if is_passed "${result}"; then
     green $green "Passed ${t}"
   else

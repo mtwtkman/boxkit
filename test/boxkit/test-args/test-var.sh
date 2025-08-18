@@ -9,7 +9,7 @@ result="$?"
 
 if is_failed "${result}"; then
   exit $?
-elif [[ $(echo "${actual}" | grep -E 'USAGE:') ]]; then
+elif $(assert_matches_string "${actual}" 'USAGE:') ; then
   exit $PASSED
 else
   exit $FAILED

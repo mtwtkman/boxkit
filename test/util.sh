@@ -2,29 +2,34 @@
 
 function _message
 {
-  color=$1
+  color="${1}m"
   shift
   echo -e "\033[0;${color}${@}\033[0m"
 }
 
 function green
 {
-  _message "32m" $@
+  _message "32" $@
 }
 
 function red
 {
-  _message "31m" $@
+  _message "31" $@
 }
 
 function yellow
 {
-  _message "33m" $@
+  _message "33" $@
 }
 
 function cyan
 {
-  _message "36m" $@
+  _message "36" $@
+}
+
+function magenta
+{
+  _message "35" $@
 }
 
 function run_boxkit
@@ -44,6 +49,7 @@ function run_boxkit
 }
 
 PASSED="0"
+FAILED="1"
 
 function is_passed
 {
@@ -53,6 +59,26 @@ function is_passed
 function is_failed
 {
   ! is_passed "$1"
+}
+
+function assert_matches_string
+{
+  actual="${1}"
+  expected="${2}"
+  echo "${actual}" | grep -E "${expected}" &> /dev/null
+}
+
+function assert_exists_file
+{
+  actual="${1}"
+  [ -e "${actual}" ]
+}
+
+function assert_includes_string
+{
+  actual="${1}"
+  expected="${2}"
+  cat "${1}" | grep -E "${expected}" &> /dev/null
 }
 
 function setup_testing_workspace
