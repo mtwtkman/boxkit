@@ -35,8 +35,8 @@ function magenta
 function run_boxkit
 {
   test "${BOXKIT_TEST_VERBOSE}" && set -x
-  options=$1
-  argument=$2
+  options="${1}"
+  argument="${2:-}"
   here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
   boxkit="$(readlink -f ${here}/../boxkit)"
   cmd="sh ${boxkit} ${argument}"
@@ -71,7 +71,7 @@ function assert_matches_string
 function assert_exists_file
 {
   actual="${1}"
-  [ -e "${actual}" ]
+  [[ -e "${actual}" ]]
 }
 
 function assert_includes_string
@@ -94,4 +94,19 @@ function teardown_testing_workspace
 {
   workspace="${1}"
   /bin/rm -rf ${workspace}
+}
+
+function with_workspace
+{
+  testname="${1}"
+  testfunc="${2}"
+  shift
+  shift
+  workspace=$(setup_testing_workspace "${testname}")
+  pushd "${workspace}" &> /dev/null
+  eval "${testfunc} ${@}"
+  result=$?
+  popd &> /dev/null
+  teardown_testing_workspace "${workspace}"
+  return ${result}
 }
