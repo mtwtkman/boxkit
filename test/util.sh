@@ -39,7 +39,7 @@ function run_boxkit
   argument="${2:-}"
   here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
   boxkit="$(readlink -f ${here}/../boxkit)"
-  cmd="sh ${boxkit} ${argument}"
+  cmd="bash ${boxkit} ${argument}"
   test "${options}" && cmd="${options} ${cmd}"
   yellow "Run: ${cmd}" >&2
   eval "${cmd}"

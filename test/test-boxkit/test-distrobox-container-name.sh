@@ -11,6 +11,7 @@ function testbody
   distrobox_container_name="${testname}-container"
   options="DISTROBOX_CONTAINER_NAME=${distrobox_container_name}"
   root="{workspace}/"
+  run_boxkit "${options}"
   return $PASSED
 }
 
