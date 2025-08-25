@@ -24,6 +24,7 @@ here="\$(readlink -m \$(dirname \${BASH_SOURCE[0]}))"
 source "${util_path}"
 
 testname="\$(echo \$0 | awk -F '.' '{print \$1}')"
+testname="\$(echo \$(basename \$0) | awk -F '.' '{print \$1}')"
 
 function testbody
 {

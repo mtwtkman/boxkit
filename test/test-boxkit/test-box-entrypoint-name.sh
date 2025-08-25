@@ -8,10 +8,10 @@ testname="$(echo $(basename $0) | awk -F '.' '{print $1}')"
 function testbody
 {
   magenta "Test in ${workspace}"
-  distrobox_container_name="${testname}-container"
-  options="DISTROBOX_CONTAINER_NAME=${distrobox_container_name}"
-  root="{workspace}/"
-  run_boxkit "${options}"
+  box_entrypoint_name="${testname}-entryopint"
+  options="BOX_ENTRYPOINT_NAME=${box_entrypoint_name}"
+  printf '\r' | run_boxkit "${options}"
+  [[ ! -e "${workspace}/${box_entrypoint_name}" ]] && return $FAILED
   return $PASSED
 }
 
