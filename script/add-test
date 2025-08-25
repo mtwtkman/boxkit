@@ -23,6 +23,14 @@ function gen
 here="\$(readlink -m \$(dirname \${BASH_SOURCE[0]}))"
 source "${util_path}"
 
+testname="\$(echo \$0 | awk -F '.' '{print \$1}')"
+
+function testbody
+{
+}
+
+with_workspace "\${testname}" "testbody"
+exit \$?
 EOF
   echo "${dest}"
 }

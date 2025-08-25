@@ -3,7 +3,7 @@
 here="$(readlink -m $(dirname ${BASH_SOURCE[0]}))"
 source "${here}/../util.sh"
 
-testname="test-distrobox-container-name"
+testname="$(echo $0 | awk -F '.' '{print $1}')"
 
 function testbody
 {
