@@ -135,7 +135,7 @@ function create_symlink
 
 function generate_bashrc
 {
-  cat <<EOF > ~/.bashrc
+  cat <<EOF > ${home_name}/.bashrc
 #!/bin/sh
 
 export BOX_INITIALIZED=1
@@ -190,7 +190,7 @@ function initialize_box
 
   generate_bashrc
 
-  echo "generated ~/.bashrc"
+  echo "generated ${home_name}/.bashrc"
 
   [ ! -f "mise.toml" ] && return
 
