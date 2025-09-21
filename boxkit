@@ -75,7 +75,7 @@ function generate_distrobox_manifest
   echo "[${container_name}]" > $distrobox_manifest_path
   [ "${image_name}" ] && echo $"image=${image_name}" >> $distrobox_manifest_path
   cat <<EOF >> $distrobox_manifest_path
-additional_packages="fd fzf git neovim ripgrep mise make gcc bat"
+additional_packages="fd fzf git neovim ripgrep make gcc bat"
 home=${home_name}
 init_hooks=export XDG_CONFIG_HOME=${home_name}/.config
 init_hooks=export XDG_CACHE_HOME=${home_name}/.cache
@@ -150,8 +150,6 @@ source /usr/share/bash-completion/completions/git
 source /usr/share/git/completion/git-completion.bash
 source /usr/share/git/completion/git-prompt.sh
 
-command -v "mise" &> /dev/null && eval "\\\$(mise activate bash)"
-
 export FZF_DEFAULT_COMMAND="rg --files --no-ignore --hidden --follow -g \"!{.git,node_modules}/*\" 2> /dev/null"
 export FZF_DEFAULT_OPTS="""
 --reverse
@@ -191,11 +189,6 @@ function initialize_box
   generate_bashrc
 
   echo "generated ${home_name}/.bashrc"
-
-  [ ! -f "mise.toml" ] && return
-
-  mise trust
-  mise install
 }
 
 case "\${cmd}" in
