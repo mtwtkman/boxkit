@@ -189,18 +189,19 @@ function initialize_box
   generate_bashrc
 
   echo "generated ${home_name}/.bashrc"
+
+  ${BOX_INITIALIZE_POST_HOOK_CMD}
 }
 
 case "\${cmd}" in
   enter|e)
-    [ "\${CONTAINER_ID}" ] && exit 0
+    [ "\${CONTAINER_ID}" ] && echo "Already in distrobox container, so do nothing" && exit 0
     [ ! "\$(distrobox list | rg ${container_name})" ] && create_box
     [ "\$#" = 1 ] && [ "\$1" = "-r" ] && create_box
     distrobox enter "${container_name}"
-    ${BOX_ENTER_POST_HOOK_CMD}
     ;;
   init|i)
-    [ ! "\${CONTAINER_ID}" ] && exit 0
+    [ -z "\${CONTAINER_ID}" ] && echo "This command is only permitted inner distrobox container. Please run \`./${box_script_name} enter\`" && exit 0
     initialize_box \$@
     ;;
   bashrc|b) generate_bashrc;;
