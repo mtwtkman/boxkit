@@ -197,6 +197,7 @@ case "\${cmd}" in
     [ ! "\$(distrobox list | rg ${container_name})" ] && create_box
     [ "\$#" = 1 ] && [ "\$1" = "-r" ] && create_box
     distrobox enter "${container_name}"
+    ${BOX_ENTER_POST_HOOK_CMD}
     ;;
   init|i)
     [ ! "\${CONTAINER_ID}" ] && exit 0
