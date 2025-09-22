@@ -38,7 +38,7 @@ function usage
   echo -e "\tBOX_INIT_POST_HOOK"
   echo -e "\t\tColon separated commands after box initialization."
   echo -e "\t\tYou can pass any commands like BOX_INIT_POST_HOOK='ls;pwd;'."
-  echo -e "\t\This options' value elements are permitted of combination of '<command>' and '<prefix>:<value>'."
+  echo -e "\t\tThis options' value elements are permitted of combination of '<command>' and '<prefix>:<value>'."
   echo -e "\t\\tThere are two types <prefix> , 'r' or 'l'. Detail is below."
   echo -e "\t\t\t- 'r' prefix presents 'remote'. r:<url> retrieve contents using curl from <url> and applies as is as command."
   echo -e "\t\t\t- 'l' prefix presents 'local'. l:<path> retrieve contents from local file <path> and applies as is as command."
