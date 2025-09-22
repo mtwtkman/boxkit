@@ -34,6 +34,16 @@ function usage
   echo -e "\tDISTROBOX_IMAGE_NAME"
   echo -e "\t\tWhat image for creating your development container image."
   echo -e "\t\tdefault: Up to your distrobox config"
+  echo ""
+  echo -e "\tBOX_INIT_POST_HOOK"
+  echo -e "\t\tColon separated commands after box initialization."
+  echo -e "\t\tYou can pass any commands like BOX_INIT_POST_HOOK='ls;pwd;'."
+  echo -e "\t\This options' value elements are permitted of combination of '<command>' and '<prefix>:<value>'."
+  echo -e "\t\\tThere are two types <prefix> , 'r' or 'l'. Detail is below."
+  echo -e "\t\t\t- 'r' prefix presents 'remote'. r:<url> retrieve contents using curl from <url> and applies as is as command."
+  echo -e "\t\t\t- 'l' prefix presents 'local'. l:<path> retrieve contents from local file <path> and applies as is as command."
+  echo -e "\t\t\tFor instance, BOX_INIT_POST_HOOK='ls;pwd;r:https://something/scaffolding/ghcup;l:../setup-mise' means 'After box initialization, I do 'ls', 'pwd', 'Retrieve commands from https://something/scaffolding/ghcup', 'Retrieve from ./setup-mise'."
+  echo -e "\t\tdefault: Do nothing"
 }
 
 [ ! $# = 0 ] && usage && exit 0
@@ -55,6 +65,40 @@ home_name="${box_entrypoint_path}/${DISTROBOX_HOME_NAME:-.distrobox/home}"
 box_script_name="${BOX_SCRIPT_NAME:-box}"
 box_script_path="${box_entrypoint_path}/${box_script_name}"
 image_name="${DISTROBOX_IMAGE_NAME}"
+
+box_initialization_post_hook=
+if [[ "${BOX_INIT_POST_HOOK}" ]]; then
+  IFS=';' read -ra elements <<< "${BOX_INIT_POST_HOOK}"
+  for element in "${elements[@]}"; do
+    if [[ "$element" =~ ":" ]]; then
+      prefix=$(echo "$element" | cut -d':' -f1)
+      value=$(echo "$element" | cut -d':' -f2-)
+      case "$prefix" in
+        "r")
+          content=$(curl -s "$value")
+          processed_element="$content"
+          ;;
+        "l")
+          if [[ -f "$value" ]]; then
+            content=$(cat "$value")
+            processed_element="$content"
+          else
+            processed_element="[Error: File not found at $value]"
+          fi
+          ;;
+        *)
+          processed_element="$value"
+          ;;
+      esac
+    else
+      processed_element="$element"
+    fi
+    if [[ -n "$box_initialization_post_hook" ]]; then
+      box_initialization_post_hook+=";"
+    fi
+    box_initialization_post_hook+="$processed_element"
+  done
+fi
 
 function create_with_confirmation
 {
@@ -190,7 +234,7 @@ function initialize_box
 
   echo "generated ${home_name}/.bashrc"
 
-  ${BOX_INITIALIZE_POST_HOOK_CMD}
+  ${box_initialization_post_hook}
 }
 
 case "\${cmd}" in
