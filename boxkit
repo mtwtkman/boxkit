@@ -119,7 +119,7 @@ function generate_distrobox_manifest
   echo "[${container_name}]" > $distrobox_manifest_path
   [ "${image_name}" ] && echo $"image=${image_name}" >> $distrobox_manifest_path
   cat <<EOF >> $distrobox_manifest_path
-additional_packages="fd fzf git neovim ripgrep make gcc bat"
+additional_packages="fd fzf git neovim ripgrep make gcc"
 home=${home_name}
 init_hooks=export XDG_CONFIG_HOME=${home_name}/.config
 init_hooks=export XDG_CACHE_HOME=${home_name}/.cache
@@ -148,7 +148,7 @@ function show_box_script_usage
   echo ""
   echo -e "\\tinit | i [-f]"
   echo -e "\\t\\tInitialize your development container. You should run command in your development container at first."
-  echo -e "\\t\\tThis command will deploy .bashrc and some configs(Current targets are nvim, bat and git)"
+  echo -e "\\t\\tThis command will deploy .bashrc"
   echo -e "\\\t\\tYou can pass -f option to force initialize again."
   echo ""
   echo -e "\\tstop | s"
@@ -202,7 +202,7 @@ export FZF_DEFAULT_OPTS="""
 --inline-info
 --prompt='fzf>'
 --ansi
---preview='bat --style=full --color=always {}'
+--preview='cat {}'
 --bind=ctrl-f:page-down,ctrl-b:page-up,'ctrl-v:become(vim {})',ctrl-^:first,ctrl-/:last
 --color=bg+:#313244,spinner:#f5e0dc,hl:#f38ba8
 --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
@@ -228,7 +228,6 @@ function initialize_box
   create_symlink \${DISTROBOX_HOST_HOME}/.ssh "\${HOME}/.ssh"
   create_symlink \${DISTROBOX_HOST_HOME}/.config/nvim "\${XDG_CONFIG_HOME}/nvim"
   create_symlink \${DISTROBOX_HOST_HOME}/.config/git "\${XDG_CONFIG_HOME}/git"
-  create_symlink \${DISTROBOX_HOST_HOME}/.config/bat "\${XDG_CONFIG_HOME}/bat"
 
   generate_bashrc
 
