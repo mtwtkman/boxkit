@@ -83,7 +83,8 @@ if [[ "${BOX_INIT_POST_HOOK}" ]]; then
             content=$(cat "$value")
             processed_element="$content"
           else
-            processed_element="[Error: File not found at $value]"
+            echo "Error: File not found at $value"
+            exit 1
           fi
           ;;
         *)
@@ -94,7 +95,7 @@ if [[ "${BOX_INIT_POST_HOOK}" ]]; then
       processed_element="$element"
     fi
     if [[ -n "$box_initialization_post_hook" ]]; then
-      box_initialization_post_hook+=";"
+      box_initialization_post_hook+="\n\t"
     fi
     box_initialization_post_hook+="$processed_element"
   done
@@ -121,6 +122,7 @@ function generate_distrobox_manifest
   cat <<EOF >> $distrobox_manifest_path
 additional_packages="fd fzf git neovim ripgrep make gcc"
 home=${home_name}
+hostname=distrobox
 init_hooks=export XDG_CONFIG_HOME=${home_name}/.config
 init_hooks=export XDG_CACHE_HOME=${home_name}/.cache
 init_hooks=export XDG_STATE_HOME=${home_name}/.local/state
@@ -233,7 +235,7 @@ function initialize_box
 
   echo "generated ${home_name}/.bashrc"
 
-  ${box_initialization_post_hook}
+  $(echo -e ${box_initialization_post_hook})
 }
 
 case "\${cmd}" in
