@@ -1,0 +1,32 @@
+#!/bin/sh
+# Open URLs/files on the host desktop from inside the distrobox container.
+#
+# Root cause this works around: the graphical session (sway) runs on its own
+# dbus-launch bus (e.g. /tmp/dbus-XXXX), while host-spawn / flatpak-session-helper
+# default to the systemd user bus (/run/user/$UID/bus). Firefox registers its
+# remoting name on the *session* bus, so a browser spawned on the systemd bus
+# can't hand off the URL and dies on its profile lock ("already running but is
+# not responding"). We discover the session bus from a running session process
+# and inject it. Also strips a /run/host cwd prefix so the host can chdir.
+
+cwd=$(pwd)
+case "$cwd" in
+	/run/host/*) cwd=${cwd#/run/host} ;;
+esac
+
+# Pass URLs/paths as positional args ($@) to a host-side shell that finds the
+# graphical session's real D-Bus bus and runs xdg-open under it.
+exec host-spawn --no-pty -cwd "$cwd" /bin/sh -s -- "$@" <<'EOS'
+uid=$(id -u)
+for p in $(pgrep -u "$uid" -x firefox 2>/dev/null) \
+         $(pgrep -u "$uid" -x sway 2>/dev/null); do
+	# Wrap the read so a Permission-denied open (non-dumpable procs like sway)
+	# is suppressed, not just tr's stderr.
+	a=$({ tr '\0' '\n' < "/proc/$p/environ"; } 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+	if [ -n "$a" ]; then
+		export DBUS_SESSION_BUS_ADDRESS="$a"
+		break
+	fi
+done
+exec /usr/bin/xdg-open "$@"
+EOS
