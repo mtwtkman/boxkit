@@ -9,17 +9,29 @@
 # not responding"). We discover the session bus from a running session process
 # and inject it. Also strips a /run/host cwd prefix so the host can chdir.
 
+browser=${BROWSER:-firefox}
+desktopapp=${DESKTOPAPP:-sway}
+
 cwd=$(pwd)
 case "$cwd" in
 	/run/host/*) cwd=${cwd#/run/host} ;;
 esac
 
-# Pass URLs/paths as positional args ($@) to a host-side shell that finds the
-# graphical session's real D-Bus bus and runs xdg-open under it.
-exec host-spawn --no-pty -cwd "$cwd" /bin/sh -s -- "$@" <<'EOS'
+# Pass browser/desktopapp names plus the URLs/paths as positional args to a
+# host-side shell that finds the graphical session's real D-Bus bus and runs
+# xdg-open under it. The heredoc is quoted, so $browser/$desktopapp are NOT
+# expanded inline; they must be passed as args and recovered on the host side.
+exec host-spawn --no-pty -cwd "$cwd" /bin/sh -s -- "$browser" "$desktopapp" "$@" <<'EOS'
+browser=$1
+desktopapp=$2
+shift 2
+# Generic-mode xdg-open (sway is not a recognized DE) falls back to the $BROWSER
+# list, which otherwise starts with the Debian-only "x-www-browser" and prints
+# "command not found" on this host. Pin it to the real browser.
+export BROWSER="$browser"
 uid=$(id -u)
-for p in $(pgrep -u "$uid" -x firefox 2>/dev/null) \
-         $(pgrep -u "$uid" -x sway 2>/dev/null); do
+for p in $(pgrep -u "$uid" -x "$browser" 2>/dev/null) \
+         $(pgrep -u "$uid" -x "$desktopapp" 2>/dev/null); do
 	# Wrap the read so a Permission-denied open (non-dumpable procs like sway)
 	# is suppressed, not just tr's stderr.
 	a=$({ tr '\0' '\n' < "/proc/$p/environ"; } 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
