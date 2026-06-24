@@ -243,7 +243,8 @@ case "\${cmd}" in
     [ "\${CONTAINER_ID}" ] && echo "Already in distrobox container, so do nothing" && exit 0
     [ ! "\$(distrobox list | rg ${container_name})" ] && create_box
     [ "\$#" = 1 ] && [ "\$1" = "-r" ] && create_box
-    distrobox enter "${container_name}"
+    host_dir="\$(pwd)"
+    distrobox enter --no-workdir "${container_name}" -- /bin/sh -c "cd \"\${host_dir}\" 2>/dev/null; exec \"\${SHELL:-/bin/bash}\""
     ;;
   init|i)
     [ -z "\${CONTAINER_ID}" ] && echo "This command is only permitted inner distrobox container. Please run \`./${box_script_name} enter\`" && exit 0
