@@ -75,21 +75,21 @@ test ! -e .distrobox/home/.bashrc
 # Host enter must initialize once, and subsequent enters must not reprovision.
 cat > "$tmp/bin/distrobox" <<'MOCK'
 #!/usr/bin/env bash
-case "\${1:-}" in
+case "${1:-}" in
   list)
     printf 'ID | NAME | STATUS | IMAGE\n'
     if [ -f "$BOX_TEST_CONTAINER_ID_FILE" ]; then
-      printf '%s | boxkit-ci | Up | archlinux\n' "\$(cat "$BOX_TEST_CONTAINER_ID_FILE")"
+      printf '%s | boxkit-ci | Up | archlinux\n' "$(cat "$BOX_TEST_CONTAINER_ID_FILE")"
       printf 'other | boxkit-ci-extra | Up | archlinux\n'
     fi
     ;;
   assemble)
-    case "\${2:-}" in
+    case "${2:-}" in
       rm) rm -f "$BOX_TEST_CONTAINER_ID_FILE" ;;
       create)
         count=0
-        [ -f "$BOX_TEST_COUNTER" ] && count="\$(cat "$BOX_TEST_COUNTER")"
-        count=\$((count + 1))
+        [ -f "$BOX_TEST_COUNTER" ] && count="$(cat "$BOX_TEST_COUNTER")"
+        count=$((count + 1))
         printf '%s\n' "\$count" > "$BOX_TEST_COUNTER"
         printf 'instance-%s\n' "\$count" > "$BOX_TEST_CONTAINER_ID_FILE"
         ;;
@@ -99,7 +99,7 @@ case "\${1:-}" in
     printf '%s\n' "$*" >> "$BOX_TEST_ENTER_LOG"
     while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
     shift
-    if [ "\${1:-}" = /usr/bin/env ]; then
+    if [ "${1:-}" = /usr/bin/env ]; then
       shift
       while [ "$#" -gt 0 ] && [[ "$1" == *=* ]]; do export "$1"; shift; done
       CONTAINER_ID=boxkit-ci "$@"
