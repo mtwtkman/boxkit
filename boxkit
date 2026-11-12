@@ -31,12 +31,13 @@ create_default() {
 [container]
 name = $name
 engine = podman
-image = docker.io/library/debian:13
+image = docker.io/library/archlinux:latest
 home = .boxkit/home
 
 [integration]
 ssh_agent = true
 wayland = true
+dbus_session = true
 gpu = false
 
 [network]
@@ -54,7 +55,7 @@ EOF
   printf 'Created %s/boxkit.ini and %s/box\n' "$dst" "$dst"
 }
 NAME='' ENGINE=podman IMAGE='' HOME_PATH=.boxkit/home
-SSH_AGENT=true WAYLAND=true GPU=false NETWORK=private
+SSH_AGENT=true WAYLAND=true DBUS_SESSION=true GPU=false NETWORK=private
 declare -a MOUNTS=() PORTS=()
 load_config() {
   local file="$ROOT/boxkit.ini" section='' line key value
@@ -73,6 +74,7 @@ load_config() {
       container.home) HOME_PATH="$value";;
       integration.ssh_agent) SSH_AGENT="$value";;
       integration.wayland) WAYLAND="$value";;
+      integration.dbus_session) DBUS_SESSION="$value";;
       integration.gpu) GPU="$value";;
       network.mode) NETWORK="$value";;
       network.publish) PORTS+=("$value");;
@@ -83,7 +85,7 @@ load_config() {
   [[ "$NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || die "invalid container name"
   [[ -n "$IMAGE" ]] || die "container.image required"
   [[ "$ENGINE" == podman ]] || die "engine '$ENGINE' not supported yet (currently: podman)"
-  valid_bool "$SSH_AGENT"; valid_bool "$WAYLAND"; valid_bool "$GPU"
+  valid_bool "$SSH_AGENT"; valid_bool "$WAYLAND"; valid_bool "$DBUS_SESSION"; valid_bool "$GPU"
   [[ "$NETWORK" == private || "$NETWORK" == none ]] || die "network.mode must be private or none"
   [[ "$HOME_PATH" != /* && "$HOME_PATH" != *..* ]] || die "container.home must be a relative path without '..'"
   LOCAL_HOME="$ROOT/$HOME_PATH"
@@ -113,7 +115,7 @@ validate_mount() {
 }
 detect_integrations() {
   local socket='' wd='' rt=''
-  AGENT_SOCKET='' WAYLAND_SOCKET=''
+  AGENT_SOCKET='' WAYLAND_SOCKET='' DBUS_SOCKET=''
   if [[ "$SSH_AGENT" == true ]]; then
     socket="${BOX_SSH_AGENT_SOCKET:-${SSH_AUTH_SOCK:-}}"
     if [[ -n "$socket" && -S "$socket" ]]; then
@@ -129,12 +131,27 @@ detect_integrations() {
     [[ -n "$wd" && -S "$socket" ]] || die "Wayland enabled but socket unavailable: $socket"
     WAYLAND_SOCKET="$(readlink -f -- "$socket")"
   fi
+  if [[ "$DBUS_SESSION" == true ]]; then
+    # The session bus usually lives in the host XDG runtime directory. An
+    # explicit unix:path= address may override that location.
+    local bus="${XDG_RUNTIME_DIR:-}/bus" address="${DBUS_SESSION_BUS_ADDRESS:-}"
+    if [[ "$address" == unix:path=* ]]; then
+      local candidate="${address#unix:path=}"
+      candidate="${candidate%%,*}"
+      if [[ "$candidate" == /* && -S "$candidate" ]]; then bus="$candidate"; fi
+    fi
+    if [[ -S "$bus" ]]; then
+      DBUS_SOCKET="$(readlink -f -- "$bus")"
+    else
+      warn "session D-Bus socket unavailable; D-Bus integration disabled for this container instance"
+    fi
+  fi
 }
 fingerprint() {
   local path
   { cat "$ROOT/boxkit.ini"
-    printf '\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET"
-    for path in "$AGENT_SOCKET" "$WAYLAND_SOCKET"; do
+    printf '\n%s\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET"
+    for path in "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET"; do
       if [[ -n "$path" ]]; then stat -Lc '%d:%i' -- "$path"; fi
     done
   } | sha256sum | awk '{print $1}'
@@ -175,8 +192,17 @@ make_container() {
   fi
   if [[ -n "$WAYLAND_SOCKET" ]]; then
     args+=(--mount "type=bind,src=$WAYLAND_SOCKET,dst=/home/dev/.boxkit-runtime/wayland-0,rw"
-           --env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime
            --env WAYLAND_DISPLAY=wayland-0)
+  fi
+  if [[ -n "$DBUS_SOCKET" ]]; then
+    args+=(--mount "type=bind,src=$DBUS_SOCKET,dst=/home/dev/.boxkit-runtime/bus,rw"
+           --env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus)
+  else
+    # Never leave a stale host address pointing to an inaccessible socket.
+    args+=(--env DBUS_SESSION_BUS_ADDRESS=)
+  fi
+  if [[ -n "$WAYLAND_SOCKET" || -n "$DBUS_SOCKET" ]]; then
+    args+=(--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime)
   fi
   if [[ "$GPU" == true ]]; then
     [[ -d /dev/dri ]] || die "GPU enabled but /dev/dri missing"

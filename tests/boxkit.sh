@@ -12,6 +12,8 @@ bash "$repo/boxkit" init
 [[ -f boxkit.ini && -x box ]]
 bash -n box
 grep -q '^engine = podman$' boxkit.ini
+grep -q '^image = docker.io/library/archlinux:latest$' boxkit.ini
+grep -q '^dbus_session = true$' boxkit.ini
 [[ ! -e Containerfile ]]
 if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
 mkdir -p .boxkit/home
@@ -20,6 +22,20 @@ echo 'invalid_setting = true' >> boxkit.ini
 if bash ./box list 2>/dev/null; then echo 'invalid INI accepted' >&2; exit 1; fi
 sed -i '/invalid_setting = true/d' boxkit.ini
 sed -i 's/wayland = true/wayland = false/' boxkit.ini
+# Provide a real host D-Bus socket for the integration tests.
+mkdir -p "$tmp/runtime"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
+bus_pid=$!
+trap 'kill "$bus_pid" 2>/dev/null || :; rm -rf -- "$tmp"' EXIT
+for attempt in {1..60}; do
+  [[ -S "$tmp/runtime/bus" ]] && break
+  sleep 0.05
+done
+[[ -S "$tmp/runtime/bus" ]]
+export XDG_RUNTIME_DIR="$tmp/runtime"
+# Host address is intentionally different: container must never inherit it.
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$tmp/runtime/bus"
+
 cat > "$tmp/bin/podman" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -59,12 +75,30 @@ export BOX_PROVISIONER=none
 ./box enter
 [[ -f .boxkit/state/initialized ]]
 grep -q 'create --name' "$BOX_TEST_LOG"
+grep -q 'docker.io/library/archlinux:latest' "$BOX_TEST_LOG"
+grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/bus,dst=/home/dev/.boxkit-runtime/bus" "$BOX_TEST_LOG"
+grep -Fq -- '--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime' "$BOX_TEST_LOG"
 grep -q -- '--userns=keep-id' "$BOX_TEST_LOG"
 grep -q -- '--mount type=bind,src=' "$BOX_TEST_LOG"
 grep -q ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG"
 count="$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")"
 ./box enter
 [[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+# Stopping and restarting the same container should not require recreation.
+./box stop
+./box enter
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+# A new bus socket inode requires explicit recreation so no stale socket is used.
+kill "$bus_pid" 2>/dev/null || :
+wait "$bus_pid" 2>/dev/null || :
+rm -f "$tmp/runtime/bus"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
+bus_pid=$!
+for attempt in {1..60}; do [[ -S "$tmp/runtime/bus" ]] && break; sleep 0.05; done
+if ./box enter 2>/dev/null; then echo 'replaced bus socket accepted without recreation' >&2; exit 1; fi
+./box enter -r
+grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
 ./box exec git --version
 grep -q 'git --version' "$BOX_TEST_LOG"
 ./box stop
