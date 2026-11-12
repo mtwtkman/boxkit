@@ -169,9 +169,9 @@ function show_box_script_usage
   echo -e "\\t\\tEnter your development container via distrobox. If the continer have not existed, ${script_name} will create it."
   echo -e "\\t\\tYou can pass -r option to recreate the container then ${home_name} will be recreated also."
   echo ""
-  echo -e "\\tinit | i [-f]"
-  echo -e "\\t\\tInitialize your development container. You should run command in your development container at first."
-  echo -e "\\t\\tThis command will deploy .bashrc and optionally provision Mi."
+  echo -e "\\tInitialization runs automatically on first enter"
+  echo -e "\\t\\tThe first enter asks whether to provision Mi."
+
   echo -e "\\\t\\tYou can pass -f option to force initialize again."
   echo ""
   echo -e "\\tstop | s"
@@ -223,8 +223,10 @@ function create_box
 {
   [ "\${CONTAINER_ID}" ] && return
   # Preserve the existing container HOME even when recreating the container.
-  [ "\$(distrobox list | grep -F -- ${container_name})" ] && distrobox assemble rm --file "$distrobox_manifest_path"
-  [ ! "\$(distrobox list | grep -F -- ${container_name})" ] && distrobox assemble create --file "$distrobox_manifest_path"
+  if [ -n "\$(distrobox list | grep -F -- ${container_name})" ]; then
+    distrobox assemble rm --file "$distrobox_manifest_path" || return 1
+  fi
+  distrobox assemble create --file "$distrobox_manifest_path" || return 1
 }
 
 function create_symlink
@@ -279,9 +281,9 @@ EOF
 
 function initialize_box
 {
-  [ "\$#" = 1 ] && [ "\$1" = "-f" ] && unset BOX_INITIALIZED
-  [ "\${BOX_INITIALIZED}" ] && echo "Already initialized bye." && exit 0
-  [ ! -d "\${XDG_CONFIG_HOME}" ] && mkdir "\${XDG_CONFIG_HOME}"
+  local marker="${box_entrypoint_path}/.distrobox/initialized"
+  [ -f "\$marker" ] && return 0
+  mkdir -p -- "\${XDG_CONFIG_HOME:-\$HOME/.config}" || return 1
 
   # Provisioning is explicit; never execute arbitrary post-init hooks.
   case "\${BOX_PROVISIONER:-}" in
@@ -319,22 +321,60 @@ function initialize_box
   generate_bashrc
 
   echo "generated ${home_name}/.bashrc"
+  mkdir -p -- "${box_entrypoint_path}/.distrobox" || return 1
+  touch -- "\$marker" || return 1
 
   # Arbitrary post-initialization shell execution is intentionally disabled.
 }
 
 case "\${cmd}" in
   enter|e)
-    [ "\${CONTAINER_ID}" ] && echo "Already in distrobox container, so do nothing" && exit 0
+    [ -n "\${CONTAINER_ID:-}" ] && echo "Already in distrobox container, so do nothing" && exit 0
+    marker="${box_entrypoint_path}/.distrobox/initialized"
+    if [ ! -f "\$marker" ]; then
+      provisioner="\${BOX_PROVISIONER:-}"
+      case "\$provisioner" in
+        mi) ;;
+        none) provisioner="" ;;
+        "")
+          if [ ! -t 0 ]; then
+            echo "First enter requires terminal confirmation or BOX_PROVISIONER=mi|none." >&2
+            exit 1
+          fi
+          printf 'Provision this container with Mi? [y/N] '
+          IFS= read -r answer || exit 1
+          case "\$answer" in
+            y|Y) provisioner=mi ;;
+            *) provisioner="" ;;
+          esac
+          ;;
+        *) echo "Unsupported BOX_PROVISIONER: \$provisioner" >&2; exit 1 ;;
+      esac
+    fi
     prepare_ssh_agent || exit 1
-    [ ! "\$(distrobox list | grep -F -- ${container_name})" ] && create_box
-    [ "\$#" = 1 ] && [ "\$1" = "-r" ] && create_box
+    if [ -z "\$(distrobox list | grep -F -- ${container_name})" ]; then
+      create_box || exit 1
+    fi
+    if [ "\$#" = 1 ] && [ "\$1" = "-r" ]; then
+      create_box || exit 1
+    fi
+    if [ ! -f "\$marker" ]; then
+      distrobox enter --no-workdir "${container_name}" -- /usr/bin/env "BOX_PROVISIONER=\$provisioner" /bin/bash "${box_script_path}" _init || exit 1
+      if [ ! -f "\$marker" ]; then
+        echo "Container initialization did not complete; retry ./box enter." >&2
+        exit 1
+      fi
+    fi
     host_dir="\$(pwd | sed 's/\/run\/host//g')"
     distrobox enter --no-workdir "${container_name}" -- /bin/sh -c "cd \"\${host_dir}\" 2>/dev/null; exec \"\${SHELL:-/bin/bash}\""
     ;;
+  _init)
+    [ -z "\${CONTAINER_ID:-}" ] && echo "Internal init requires a container." >&2 && exit 1
+    initialize_box
+    ;;
   init|i)
-    [ -z "\${CONTAINER_ID}" ] && echo "This command is only permitted inner distrobox container. Please run \`./${box_script_name} enter\`" && exit 0
-    initialize_box \$@
+    echo "Initialization is automatic on first ./box enter." >&2
+    exit 1
     ;;
   bashrc|b) generate_bashrc;;
   replace|r) distrobox assemble create --replace --file "${distrobox_manifest_path}";;

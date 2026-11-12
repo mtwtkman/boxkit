@@ -58,7 +58,7 @@ export CONTAINER_ID=boxkit-ci
 export XDG_CONFIG_HOME="$tmp/project/.distrobox/home/.config"
 mkdir -p "$XDG_CONFIG_HOME"
 cd "$tmp/project"
-BOX_PROVISIONER=mi MI_REPO_PATH="$tmp/mock-mi" bash ./box init
+BOX_PROVISIONER=mi MI_REPO_PATH="$tmp/mock-mi" bash ./box _init
 grep -qx 'container:deploy' "$BOX_TEST_MI_LOG"
 test -f .distrobox/home/.bashrc
 
@@ -67,9 +67,46 @@ export XDG_CONFIG_HOME="$tmp/invalid-project/.config"
 mkdir -p "$XDG_CONFIG_HOME" "$tmp/invalid-project"
 cd "$tmp/invalid-project"
 BOX_ENTRYPOINT_NAME="$tmp/invalid-project" bash "$repo/boxkit"
-if BOX_PROVISIONER=unknown bash ./box init; then
+if BOX_PROVISIONER=unknown bash ./box _init; then
   echo 'FAIL: unknown provisioner accepted' >&2
   exit 1
 fi
 test ! -e .distrobox/home/.bashrc
+# Host enter must initialize once, and subsequent enters must not reprovision.
+cat > "$tmp/bin/distrobox" <<'MOCK'
+#!/usr/bin/env bash
+if [ "${1:-}" = list ]; then
+  printf 'ID | NAME | STATUS\n'
+elif [ "${1:-}" = assemble ]; then
+  exit 0
+elif [ "${1:-}" = enter ]; then
+  printf '%s\n' "$*" >> "$BOX_TEST_ENTER_LOG"
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
+  shift
+  if [ "${1:-}" = /usr/bin/env ]; then
+    shift
+    export "$1"
+    shift
+    CONTAINER_ID=boxkit-ci "$@"
+  fi
+fi
+MOCK
+chmod +x "$tmp/bin/distrobox"
+export BOX_TEST_ENTER_LOG="$tmp/enter-invocations"
+export HOME="$tmp/host-home"
+mkdir -p "$HOME"
+unset CONTAINER_ID
+rm -f -- "$tmp/project/.distrobox/initialized"
+cd "$tmp/project"
+BOX_PROVISIONER=none bash ./box e
+test -f .distrobox/initialized
+test -f .distrobox/home/.bashrc
+test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 1
+BOX_PROVISIONER=none bash ./box e
+test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 1
+if bash ./box i; then
+  echo 'FAIL: legacy init command still accepted' >&2
+  exit 1
+fi
+
 echo 'Boxkit regression tests passed'

@@ -41,18 +41,20 @@ OPTIONS:
 # Quick start
 1. Run `curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | bash -s`
 1. Run `./box e`
-1. Run `./box i`
-1. Run `. ~/.bashrc` or Re-enter the conatiner
+1. On first `./box e`, confirm whether to provision Mi; initialization then runs automatically before the interactive shell starts.
+1. On subsequent `./box e` runs, initialization is skipped.
 
 ## Distrobox and Mi integration
 
 Boxkit creates a project-local container HOME. It does not automatically link
 host SSH credentials or Git/Neovim configuration into that HOME.
 
-Mi provisioning is optional. After entering the container, run:
+Mi provisioning is optional. On first `./box enter`, Boxkit prompts whether to use Mi. Answer `y` to provision Mi or `N` to skip. To avoid the prompt in automation, specify the choice explicitly:
 
 ```bash
-BOX_PROVISIONER=mi ./box init
+BOX_PROVISIONER=mi ./box enter
+# or
+BOX_PROVISIONER=none ./box enter
 ```
 
 This downloads the Mi setup script and runs it with `MI_PROFILE=container`,
@@ -62,13 +64,12 @@ deploying Git and OpenCode configuration by default. It requires `curl` and
 For an existing local checkout instead of downloading the setup script:
 
 ```bash
-BOX_PROVISIONER=mi MI_REPO_PATH=/path/to/mi ./box init
+BOX_PROVISIONER=mi MI_REPO_PATH=/path/to/mi ./box enter
 ```
 
 To review and pin a particular setup script, set `BOX_MI_SETUP_URL` to a
-trusted immutable URL. Do not point it at an unreviewed script. With no
-`BOX_PROVISIONER`, `./box init` only generates the container's shell setup.
-Initialization failure leaves it unmarked so the command can be retried.
+trusted immutable URL. Do not point it at an unreviewed script. With no `BOX_PROVISIONER`, the first interactive enter asks for confirmation.
+A successful initialization is recorded in `.distrobox/initialized` in the project directory; later entries skip it. Failed initialization leaves it unmarked so the next enter retries. The old `./box init` command is no longer supported. Existing installations created with an older Boxkit version do not have the marker and will initialize once when migrated.
 Install `fzf` and `ripgrep` using the container package manager; they are
 also listed in the generated manifest.
 
