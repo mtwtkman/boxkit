@@ -222,6 +222,7 @@ else
   exit 1
 fi'
   podman exec --user 0 "$NAME" /bin/sh -c "$bootstrap"
+  podman exec --user 0 "$NAME" /bin/sh -c 'uid="$1"; gid="$2"; if ! grep -q "^[^:]*:[^:]*:$gid:" /etc/group; then printf "boxdev:x:%s:\\n" "$gid" >> /etc/group; fi; if ! grep -q "^[^:]*:[^:]*:$uid:" /etc/passwd; then printf "boxdev:x:%s:%s::/home/dev:/bin/bash\\n" "$uid" "$gid" >> /etc/passwd; fi' sh "$(id -u)" "$(id -g)"
 }
 init_inside() {
   local marker=/workspace/.boxkit/state/initialized setup=/workspace/box_setup.sh
@@ -305,7 +306,9 @@ main() {
       shift
       [[ "$#" -gt 0 ]] || die "usage: ./box exec COMMAND..."
       container_running || die "container not running; use ./box enter"
-      exec podman exec -it --user "$(id -u):$(id -g)" "$NAME" "$@"
+      local -a tty_opts=(-i)
+      if [[ -t 0 && -t 1 ]]; then tty_opts+=(-t); fi
+      exec podman exec "${tty_opts[@]}" --user "$(id -u):$(id -g)" "$NAME" "$@"
       ;;
     stop|s)
       if [[ -n "$(container_id)" ]] && container_running; then podman stop "$NAME"; fi
