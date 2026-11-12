@@ -58,7 +58,7 @@ export CONTAINER_ID=boxkit-ci
 export XDG_CONFIG_HOME="$tmp/project/.distrobox/home/.config"
 mkdir -p "$XDG_CONFIG_HOME"
 cd "$tmp/project"
-BOX_PROVISIONER=mi MI_REPO_PATH="$tmp/mock-mi" bash ./box _init
+BOX_CONTAINER_INSTANCE=initial-test BOX_PROVISIONER=mi MI_REPO_PATH="$tmp/mock-mi" bash ./box _init
 grep -qx 'container:deploy' "$BOX_TEST_MI_LOG"
 test -f .distrobox/home/.bashrc
 
@@ -67,7 +67,7 @@ export XDG_CONFIG_HOME="$tmp/invalid-project/.config"
 mkdir -p "$XDG_CONFIG_HOME" "$tmp/invalid-project"
 cd "$tmp/invalid-project"
 BOX_ENTRYPOINT_NAME="$tmp/invalid-project" bash "$repo/boxkit"
-if BOX_PROVISIONER=unknown bash ./box _init; then
+if BOX_CONTAINER_INSTANCE=invalid-test BOX_PROVISIONER=unknown bash ./box _init; then
   echo 'FAIL: unknown provisioner accepted' >&2
   exit 1
 fi
@@ -75,35 +75,62 @@ test ! -e .distrobox/home/.bashrc
 # Host enter must initialize once, and subsequent enters must not reprovision.
 cat > "$tmp/bin/distrobox" <<'MOCK'
 #!/usr/bin/env bash
-if [ "${1:-}" = list ]; then
-  printf 'ID | NAME | STATUS\n'
-elif [ "${1:-}" = assemble ]; then
-  exit 0
-elif [ "${1:-}" = enter ]; then
-  printf '%s\n' "$*" >> "$BOX_TEST_ENTER_LOG"
-  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
-  shift
-  if [ "${1:-}" = /usr/bin/env ]; then
+case "${1:-}" in
+  list)
+    printf 'ID | NAME | STATUS | IMAGE\n'
+    if [ -f "$BOX_TEST_CONTAINER_ID_FILE" ]; then
+      printf '%s | boxkit-ci | Up | archlinux\n' "$(cat "$BOX_TEST_CONTAINER_ID_FILE")"
+      printf 'other | boxkit-ci-extra | Up | archlinux\n'
+    fi
+    ;;
+  assemble)
+    case "${2:-}" in
+      rm) rm -f "$BOX_TEST_CONTAINER_ID_FILE" ;;
+      create)
+        count=0
+        [ -f "$BOX_TEST_COUNTER" ] && count="$(cat "$BOX_TEST_COUNTER")"
+        count=$((count + 1))
+        printf '%s\n' "$count" > "$BOX_TEST_COUNTER"
+        printf 'instance-%s\n' "$count" > "$BOX_TEST_CONTAINER_ID_FILE"
+        ;;
+    esac
+    ;;
+  enter)
+    printf '%s\n' "$*" >> "$BOX_TEST_ENTER_LOG"
+    while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
     shift
-    export "$1"
-    shift
-    CONTAINER_ID=boxkit-ci "$@"
-  fi
-fi
+    if [ "${1:-}" = /usr/bin/env ]; then
+      shift
+      while [ "$#" -gt 0 ] && [[ "$1" == *=* ]]; do export "$1"; shift; done
+      CONTAINER_ID=boxkit-ci "$@"
+    fi
+    ;;
+esac
 MOCK
 chmod +x "$tmp/bin/distrobox"
 export BOX_TEST_ENTER_LOG="$tmp/enter-invocations"
+export BOX_TEST_CONTAINER_ID_FILE="$tmp/container-id"
+export BOX_TEST_COUNTER="$tmp/container-count"
 export HOME="$tmp/host-home"
 mkdir -p "$HOME"
 unset CONTAINER_ID
 rm -f -- "$tmp/project/.distrobox/initialized"
 cd "$tmp/project"
 BOX_PROVISIONER=none bash ./box e
-test -f .distrobox/initialized
+test "$(cat .distrobox/initialized)" = instance-1
 test -f .distrobox/home/.bashrc
 test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 1
 BOX_PROVISIONER=none bash ./box e
 test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 1
+# Recreate changes the container ID and must rerun initialization.
+BOX_PROVISIONER=none bash ./box e -r
+test "$(cat .distrobox/initialized)" = instance-2
+test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 2
+# Reusing a name after external replacement must not reuse the stale marker.
+printf 'external-instance\n' > "$BOX_TEST_CONTAINER_ID_FILE"
+BOX_PROVISIONER=none bash ./box e
+test "$(cat .distrobox/initialized)" = external-instance
+test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 3
 if bash ./box i; then
   echo 'FAIL: legacy init command still accepted' >&2
   exit 1

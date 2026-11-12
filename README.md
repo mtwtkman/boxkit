@@ -61,7 +61,7 @@ This downloads the Mi setup script and runs it with `MI_PROFILE=container`,
 deploying Git and OpenCode configuration by default. It requires `curl` and
 `git` in the container, and a Mi version that supports container setup.
 
-For an existing local checkout instead of downloading the setup script:
+For an existing local checkout accessible at the same path inside the container instead of downloading the setup script:
 
 ```bash
 BOX_PROVISIONER=mi MI_REPO_PATH=/path/to/mi ./box enter
@@ -69,7 +69,7 @@ BOX_PROVISIONER=mi MI_REPO_PATH=/path/to/mi ./box enter
 
 To review and pin a particular setup script, set `BOX_MI_SETUP_URL` to a
 trusted immutable URL. Do not point it at an unreviewed script. With no `BOX_PROVISIONER`, the first interactive enter asks for confirmation.
-A successful initialization is recorded in `.distrobox/initialized` in the project directory; later entries skip it. Failed initialization leaves it unmarked so the next enter retries. The old `./box init` command is no longer supported. Existing installations created with an older Boxkit version do not have the marker and will initialize once when migrated.
+A successful initialization records the container instance ID in `.distrobox/initialized` in the project directory; later entries skip it only while the container ID matches. Recreating or externally replacing the container triggers initialization again. Failed initialization leaves it unmarked so the next enter retries. The old `./box init` command is no longer supported. Existing installations created with an older Boxkit version do not have the marker and will initialize once when migrated.
 Install `fzf` and `ripgrep` using the container package manager; they are
 also listed in the generated manifest.
 
