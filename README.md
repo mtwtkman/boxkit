@@ -68,3 +68,43 @@ implementation executes fetched shell code. Distrobox is host-integrated, not
 a strict security sandbox. Review mounts and credentials separately.
 
 Run regression tests with `bash tests/boxkit.sh`.
+
+## Optional SSH agent forwarding
+
+Boxkit can expose a host-managed SSH agent to disposable containers without
+copying private keys or linking the host `.ssh` directory. This is opt-in.
+
+On the host, start an agent at a **stable absolute socket path** (example):
+
+```bash
+mkdir -p "$HOME/.ssh"
+eval "$(ssh-agent -a "$HOME/.ssh/boxkit-agent.sock" -s)"
+ssh-add "$HOME/.ssh/id_ed25519"
+```
+
+When generating a new Boxkit project, supply that path:
+
+```bash
+BOX_SSH_AGENT_SOCKET="$HOME/.ssh/boxkit-agent.sock" bash /path/to/boxkit
+./box enter
+ssh-add -l
+```
+
+The generated manifest includes a bind mount from the host agent socket to
+`/run/boxkit-ssh-agent.sock` and sets the container's `SSH_AUTH_SOCK` to
+that path. The path is captured at **generation time**; the socket must exist
+then. The default remains no forwarding. A new container can reuse the same
+host agent socket across projects, provided each project's manifest opts in.
+
+**Lifecycle:** If the host agent is restarted and its socket is replaced,
+a running container's bind mount can point to the old socket inode. Recreate
+the container to refresh the mount. Use a login-session service to maintain
+the stable socket path; the example above is for manual setup only. For an
+already-generated manifest, add the flags manually or regenerate in a new
+directory (Boxkit deliberately refuses to overwrite existing manifests).
+
+**Security:** Processes in a container with socket access can request SSH
+signatures using loaded host keys. Agent forwarding does not isolate
+authentication authority. Never mount the private key directory. Restrict
+forwarding to trusted containers and consider `ssh-add -c` confirmation or
+time-limited keys.
