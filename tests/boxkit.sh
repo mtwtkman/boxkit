@@ -109,7 +109,8 @@ count="$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")"
 # A new bus socket inode requires explicit recreation so no stale socket is used.
 kill "$bus_pid" 2>/dev/null || :
 wait "$bus_pid" 2>/dev/null || :
-rm -f "$tmp/runtime/bus"
+# Keep the previous socket inode allocated to avoid nondeterministic reuse.
+mv "$tmp/runtime/bus" "$tmp/runtime/bus-old"
 python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
 bus_pid=$!
 for attempt in {1..60}; do [[ -S "$tmp/runtime/bus" ]] && break; sleep 0.05; done
