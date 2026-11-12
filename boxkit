@@ -223,8 +223,10 @@ function create_box
 {
   [ "\${CONTAINER_ID}" ] && return
   # Preserve the existing container HOME even when recreating the container.
-  [ "\$(distrobox list | grep -F -- ${container_name})" ] && distrobox assemble rm --file "$distrobox_manifest_path"
-  [ ! "\$(distrobox list | grep -F -- ${container_name})" ] && distrobox assemble create --file "$distrobox_manifest_path"
+  if [ -n "\$(distrobox list | grep -F -- ${container_name})" ]; then
+    distrobox assemble rm --file "$distrobox_manifest_path" || return 1
+  fi
+  distrobox assemble create --file "$distrobox_manifest_path" || return 1
 }
 
 function create_symlink
