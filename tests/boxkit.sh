@@ -11,7 +11,242 @@ cd "$tmp/project"
 bash "$repo/boxkit" init
 [[ -f boxkit.ini && -x box ]]
 bash -n box
-grep -q '^engine = podman$' boxkit.ini
+grep -q '^engine = podman
+[[ ! -e Containerfile ]]
+if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
+mkdir -p .boxkit/home
+printf 'keep\n' > .boxkit/home/preserved
+echo 'invalid_setting = true' >> boxkit.ini
+if bash ./box list 2>/dev/null; then echo 'invalid INI accepted' >&2; exit 1; fi
+sed -i '/invalid_setting = true/d' boxkit.ini
+sed -i 's/wayland = true/wayland = false/' boxkit.ini
+# Provide a real host D-Bus socket for the integration tests.
+mkdir -p "$tmp/runtime"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
+bus_pid=$!
+trap 'kill "$bus_pid" 2>/dev/null || :; rm -rf -- "$tmp"' EXIT
+for attempt in {1..60}; do
+  [[ -S "$tmp/runtime/bus" ]] && break
+  sleep 0.05
+done
+[[ -S "$tmp/runtime/bus" ]]
+export XDG_RUNTIME_DIR="$tmp/runtime"
+# Host address is intentionally different: container must never inherit it.
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$tmp/runtime/bus"
+
+cat > "$tmp/bin/podman" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$BOX_TEST_LOG"
+case "${1:-}" in
+  create)
+    printf 'container-instance-%s\n' "$(date +%s%N)" > "$BOX_TEST_ID"
+    printf 'running=false\n' > "$BOX_TEST_STATUS"
+    ;;
+  container)
+    [[ "${2:-}" == inspect ]] || exit 2
+    [[ -f "$BOX_TEST_ID" ]] || exit 1
+    if [[ "$*" == *'{{.Id}}'* ]]; then cat "$BOX_TEST_ID"; else
+      if grep -q '^running=true$' "$BOX_TEST_STATUS"; then echo true; else echo false; fi
+    fi
+    ;;
+  start) printf 'running=true\n' > "$BOX_TEST_STATUS";;
+  stop) printf 'running=false\n' > "$BOX_TEST_STATUS";;
+  rm) rm -f "$BOX_TEST_ID" "$BOX_TEST_STATUS";;
+  ps) echo 'NAMES STATUS IMAGE';;
+  exec)
+    if [[ "$*" == *' /bin/bash /workspace/box _init'* ]]; then
+      for arg in "$@"; do
+        if [[ "$arg" == BOX_CONTAINER_INSTANCE=* ]]; then
+          printf '%s\n' "${arg#BOX_CONTAINER_INSTANCE=}" > .boxkit/state/initialized
+        fi
+      done
+    fi
+    ;;
+esac
+MOCK
+chmod +x "$tmp/bin/podman"
+export BOX_TEST_LOG="$tmp/podman-log"
+export BOX_TEST_ID="$tmp/container-id"
+export BOX_TEST_STATUS="$tmp/container-status"
+export BOX_PROVISIONER=none
+./box enter
+[[ -f .boxkit/state/initialized ]]
+grep -q 'create --name' "$BOX_TEST_LOG"
+grep -q 'docker.io/library/archlinux:latest' "$BOX_TEST_LOG"
+grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/bus,dst=/home/dev/.boxkit-runtime/bus" "$BOX_TEST_LOG"
+grep -Fq -- '--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime' "$BOX_TEST_LOG"
+grep -q -- '--userns=keep-id' "$BOX_TEST_LOG"
+grep -q -- '--mount type=bind,src=' "$BOX_TEST_LOG"
+grep -q ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG"
+count="$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")"
+./box enter
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+# Stopping and restarting the same container should not require recreation.
+./box stop
+./box enter
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+# A new bus socket inode requires explicit recreation so no stale socket is used.
+kill "$bus_pid" 2>/dev/null || :
+wait "$bus_pid" 2>/dev/null || :
+rm -f "$tmp/runtime/bus"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
+bus_pid=$!
+for attempt in {1..60}; do [[ -S "$tmp/runtime/bus" ]] && break; sleep 0.05; done
+if ./box enter 2>/dev/null; then echo 'replaced bus socket accepted without recreation' >&2; exit 1; fi
+./box enter -r
+grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
+./box exec git --version
+grep -q 'git --version' "$BOX_TEST_LOG"
+./box stop
+grep -q '^running=false$' "$BOX_TEST_STATUS"
+sed -i 's/gpu = false/gpu = true/' boxkit.ini
+if ./box enter 2>/dev/null; then echo 'changed settings accepted without recreation' >&2; exit 1; fi
+sed -i 's/gpu = true/gpu = false/' boxkit.ini
+./box enter -r
+grep -qx 'keep' .boxkit/home/preserved
+./box rm
+[[ ! -f "$BOX_TEST_ID" ]]
+grep -qx 'keep' .boxkit/home/preserved
+echo 'Boxkit regression tests passed'
+ boxkit.ini
+grep -q '^image = docker.io/library/archlinux:latest
+[[ ! -e Containerfile ]]
+if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
+mkdir -p .boxkit/home
+printf 'keep\n' > .boxkit/home/preserved
+echo 'invalid_setting = true' >> boxkit.ini
+if bash ./box list 2>/dev/null; then echo 'invalid INI accepted' >&2; exit 1; fi
+sed -i '/invalid_setting = true/d' boxkit.ini
+sed -i 's/wayland = true/wayland = false/' boxkit.ini
+cat > "$tmp/bin/podman" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$BOX_TEST_LOG"
+case "${1:-}" in
+  create)
+    printf 'container-instance-%s\n' "$(date +%s%N)" > "$BOX_TEST_ID"
+    printf 'running=false\n' > "$BOX_TEST_STATUS"
+    ;;
+  container)
+    [[ "${2:-}" == inspect ]] || exit 2
+    [[ -f "$BOX_TEST_ID" ]] || exit 1
+    if [[ "$*" == *'{{.Id}}'* ]]; then cat "$BOX_TEST_ID"; else
+      if grep -q '^running=true$' "$BOX_TEST_STATUS"; then echo true; else echo false; fi
+    fi
+    ;;
+  start) printf 'running=true\n' > "$BOX_TEST_STATUS";;
+  stop) printf 'running=false\n' > "$BOX_TEST_STATUS";;
+  rm) rm -f "$BOX_TEST_ID" "$BOX_TEST_STATUS";;
+  ps) echo 'NAMES STATUS IMAGE';;
+  exec)
+    if [[ "$*" == *' /bin/bash /workspace/box _init'* ]]; then
+      for arg in "$@"; do
+        if [[ "$arg" == BOX_CONTAINER_INSTANCE=* ]]; then
+          printf '%s\n' "${arg#BOX_CONTAINER_INSTANCE=}" > .boxkit/state/initialized
+        fi
+      done
+    fi
+    ;;
+esac
+MOCK
+chmod +x "$tmp/bin/podman"
+export BOX_TEST_LOG="$tmp/podman-log"
+export BOX_TEST_ID="$tmp/container-id"
+export BOX_TEST_STATUS="$tmp/container-status"
+export BOX_PROVISIONER=none
+./box enter
+[[ -f .boxkit/state/initialized ]]
+grep -q 'create --name' "$BOX_TEST_LOG"
+grep -q -- '--userns=keep-id' "$BOX_TEST_LOG"
+grep -q -- '--mount type=bind,src=' "$BOX_TEST_LOG"
+grep -q ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG"
+count="$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")"
+./box enter
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+./box exec git --version
+grep -q 'git --version' "$BOX_TEST_LOG"
+./box stop
+grep -q '^running=false$' "$BOX_TEST_STATUS"
+sed -i 's/gpu = false/gpu = true/' boxkit.ini
+if ./box enter 2>/dev/null; then echo 'changed settings accepted without recreation' >&2; exit 1; fi
+sed -i 's/gpu = true/gpu = false/' boxkit.ini
+./box enter -r
+grep -qx 'keep' .boxkit/home/preserved
+./box rm
+[[ ! -f "$BOX_TEST_ID" ]]
+grep -qx 'keep' .boxkit/home/preserved
+echo 'Boxkit regression tests passed'
+ boxkit.ini
+grep -q '^dbus_session = true
+[[ ! -e Containerfile ]]
+if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
+mkdir -p .boxkit/home
+printf 'keep\n' > .boxkit/home/preserved
+echo 'invalid_setting = true' >> boxkit.ini
+if bash ./box list 2>/dev/null; then echo 'invalid INI accepted' >&2; exit 1; fi
+sed -i '/invalid_setting = true/d' boxkit.ini
+sed -i 's/wayland = true/wayland = false/' boxkit.ini
+cat > "$tmp/bin/podman" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$BOX_TEST_LOG"
+case "${1:-}" in
+  create)
+    printf 'container-instance-%s\n' "$(date +%s%N)" > "$BOX_TEST_ID"
+    printf 'running=false\n' > "$BOX_TEST_STATUS"
+    ;;
+  container)
+    [[ "${2:-}" == inspect ]] || exit 2
+    [[ -f "$BOX_TEST_ID" ]] || exit 1
+    if [[ "$*" == *'{{.Id}}'* ]]; then cat "$BOX_TEST_ID"; else
+      if grep -q '^running=true$' "$BOX_TEST_STATUS"; then echo true; else echo false; fi
+    fi
+    ;;
+  start) printf 'running=true\n' > "$BOX_TEST_STATUS";;
+  stop) printf 'running=false\n' > "$BOX_TEST_STATUS";;
+  rm) rm -f "$BOX_TEST_ID" "$BOX_TEST_STATUS";;
+  ps) echo 'NAMES STATUS IMAGE';;
+  exec)
+    if [[ "$*" == *' /bin/bash /workspace/box _init'* ]]; then
+      for arg in "$@"; do
+        if [[ "$arg" == BOX_CONTAINER_INSTANCE=* ]]; then
+          printf '%s\n' "${arg#BOX_CONTAINER_INSTANCE=}" > .boxkit/state/initialized
+        fi
+      done
+    fi
+    ;;
+esac
+MOCK
+chmod +x "$tmp/bin/podman"
+export BOX_TEST_LOG="$tmp/podman-log"
+export BOX_TEST_ID="$tmp/container-id"
+export BOX_TEST_STATUS="$tmp/container-status"
+export BOX_PROVISIONER=none
+./box enter
+[[ -f .boxkit/state/initialized ]]
+grep -q 'create --name' "$BOX_TEST_LOG"
+grep -q -- '--userns=keep-id' "$BOX_TEST_LOG"
+grep -q -- '--mount type=bind,src=' "$BOX_TEST_LOG"
+grep -q ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG"
+count="$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")"
+./box enter
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+./box exec git --version
+grep -q 'git --version' "$BOX_TEST_LOG"
+./box stop
+grep -q '^running=false$' "$BOX_TEST_STATUS"
+sed -i 's/gpu = false/gpu = true/' boxkit.ini
+if ./box enter 2>/dev/null; then echo 'changed settings accepted without recreation' >&2; exit 1; fi
+sed -i 's/gpu = true/gpu = false/' boxkit.ini
+./box enter -r
+grep -qx 'keep' .boxkit/home/preserved
+./box rm
+[[ ! -f "$BOX_TEST_ID" ]]
+grep -qx 'keep' .boxkit/home/preserved
+echo 'Boxkit regression tests passed'
+ boxkit.ini
 [[ ! -e Containerfile ]]
 if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
 mkdir -p .boxkit/home
