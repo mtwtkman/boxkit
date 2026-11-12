@@ -309,11 +309,11 @@ case "\${cmd}" in
     if [ "\$recreate" -eq 1 ]; then
       BOX_RECREATE=1 prepare_ssh_agent || exit 1
       create_box || exit 1
-      id="\$(current_container_id)"
+      id="\$(container_id)"
     elif [ -z "\$id" ]; then
       prepare_ssh_agent || exit 1
       create_box || exit 1
-      id="\$(current_container_id)"
+      id="\$(container_id)"
     else
       prepare_ssh_agent || exit 1
     fi
