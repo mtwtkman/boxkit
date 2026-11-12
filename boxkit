@@ -36,6 +36,11 @@ function usage
   echo -e "\t\tWhat image for creating your development container image."
   echo -e "\t\tdefault: Up to your distrobox config"
   echo ""
+  echo -e "\tBOX_SSH_AGENT_SOCKET"
+  echo -e "\t\tOptional stable absolute path to a host ssh-agent UNIX socket."
+  echo -e "\t\tWhen set, bind-mount it read-write into the container and set SSH_AUTH_SOCK."
+  echo -e "\t\tThe socket must exist when generating the manifest."
+  echo ""
   echo -e "\tBOX_INIT_POST_HOOK"
   echo -e "\t\tColon separated commands after box initialization."
   echo -e "\t\tYou can pass any commands like BOX_INIT_POST_HOOK='ls;pwd;'."
@@ -66,6 +71,17 @@ home_name="${box_entrypoint_path}/${DISTROBOX_HOME_NAME:-.distrobox/home}"
 box_script_name="${BOX_SCRIPT_NAME:-box}"
 box_script_path="${box_entrypoint_path}/${box_script_name}"
 image_name="${DISTROBOX_IMAGE_NAME}"
+ssh_agent_socket="${BOX_SSH_AGENT_SOCKET:-}"
+if [ -n "$ssh_agent_socket" ]; then
+  if [[ "$ssh_agent_socket" != /* || "$ssh_agent_socket" == *[[:space:]]* || "$ssh_agent_socket" == *:* || "$ssh_agent_socket" == *\"* || "$ssh_agent_socket" == *\\* ]]; then
+    echo "BOX_SSH_AGENT_SOCKET must be an absolute path without whitespace, colons or quoting characters." >&2
+    exit 2
+  fi
+  if [ ! -S "$ssh_agent_socket" ]; then
+    echo "BOX_SSH_AGENT_SOCKET is not an existing UNIX socket: $ssh_agent_socket" >&2
+    exit 2
+  fi
+fi
 
 box_initialization_post_hook=
 if [[ "${BOX_INIT_POST_HOOK}" ]]; then
@@ -121,6 +137,9 @@ function generate_distrobox_manifest
 {
   echo "[${container_name}]" > "$distrobox_manifest_path"
   [ "${image_name}" ] && echo $"image=${image_name}" >> "$distrobox_manifest_path"
+  if [ -n "$ssh_agent_socket" ]; then
+    printf 'additional_flags="--volume %s:/run/boxkit-ssh-agent.sock --env SSH_AUTH_SOCK=/run/boxkit-ssh-agent.sock"\\n' "$ssh_agent_socket" >> "$distrobox_manifest_path"
+  fi
   cat <<EOF >> $distrobox_manifest_path
 additional_packages="fd fzf git neovim ripgrep make gcc"
 home=${home_name}
