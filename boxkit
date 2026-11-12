@@ -187,9 +187,9 @@ shift
 function prepare_ssh_agent
 {
   local socket="\${BOX_SSH_AGENT_SOCKET:-\${SSH_AUTH_SOCK:-}}"
-  local marker="\${box_entrypoint_path}/.distrobox/ssh-agent-source"
+  local marker="${box_entrypoint_path}/.distrobox/ssh-agent-source"
   local existing=0
-  distrobox list | grep -F -- "\${container_name}" >/dev/null && existing=1
+  distrobox list | grep -F -- "${container_name}" >/dev/null && existing=1
   if [ -z "\$socket" ] || [ ! -S "\$socket" ]; then
     echo "Warning: no active host ssh-agent socket; forwarding disabled." >&2
     if [ "\$existing" = 1 ] && [ -f "\$marker" ]; then
@@ -212,10 +212,10 @@ function prepare_ssh_agent
     fi
     return 0
   fi
-  mkdir -p "\${box_entrypoint_path}/.distrobox"
+  mkdir -p "${box_entrypoint_path}/.distrobox"
   # Update only the forwarding entry in the generated manifest.
-  sed -i '/^additional_flags="--volume .*:\/run\/boxkit-ssh-agent.sock /d' "\${distrobox_manifest_path}"
-  printf 'additional_flags="--volume %s:/run/boxkit-ssh-agent.sock --env SSH_AUTH_SOCK=/run/boxkit-ssh-agent.sock"\n' "\$socket" >> "\${distrobox_manifest_path}"
+  sed -i '/^additional_flags="--volume .*:\/run\/boxkit-ssh-agent.sock /d' "${distrobox_manifest_path}"
+  printf 'additional_flags="--volume %s:/run/boxkit-ssh-agent.sock --env SSH_AUTH_SOCK=/run/boxkit-ssh-agent.sock"\n' "\$socket" >> "${distrobox_manifest_path}"
   printf '%s\n' "\$socket" > "\$marker"
 }
 
