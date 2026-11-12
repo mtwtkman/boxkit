@@ -268,8 +268,8 @@ BOX
 
 [ ! -d "${box_entrypoint_path}" ] && mkdir -p ${box_entrypoint_path}
 mkdir -p -- "$home_name"
-create_with_confirmation "$distrobox_manifest_path" generate_distrobox_manifest
-create_with_confirmation "$box_script_path" generate_box_script
+create_with_confirmation "$distrobox_manifest_path" generate_distrobox_manifest || exit 1
+create_with_confirmation "$box_script_path" generate_box_script || exit 1
 chmod +x "$box_script_path"
 
 echo 'Now you can run `./box enter` to start distrobox.'
