@@ -1,6 +1,5 @@
 #!/bin/bash
 command -v distrobox >/dev/null 2>&1 || { echo "distrobox not found" >&2; exit 1; }
-if [ -n "${BOX_INIT_POST_HOOK:-}" ]; then echo "BOX_INIT_POST_HOOK is disabled; use a reviewed setup script." >&2; exit 2; fi
 
 function usage
 {
@@ -41,15 +40,7 @@ function usage
   echo -e "\t\tWhen set, bind-mount it read-write into the container and set SSH_AUTH_SOCK."
   echo -e "\t\tThe socket must exist when generating the manifest."
   echo ""
-  echo -e "\tBOX_INIT_POST_HOOK"
-  echo -e "\t\tColon separated commands after box initialization."
-  echo -e "\t\tYou can pass any commands like BOX_INIT_POST_HOOK='ls;pwd;'."
-  echo -e "\t\tThis options' value elements are permitted of combination of '<command>' and '<prefix>:<value>'."
-  echo -e "\t\\tThere are two types <prefix> , 'r' or 'l'. Detail is below."
-  echo -e "\t\t\t- 'r' prefix presents 'remote'. r:<url> retrieve contents using curl from <url> and applies as is as command."
-  echo -e "\t\t\t- 'l' prefix presents 'local'. l:<path> retrieve contents from local file <path> and applies as is as command."
-  echo -e "\t\t\tFor instance, BOX_INIT_POST_HOOK='ls;pwd;r:https://something/scaffolding/ghcup;l:../setup-mise' means 'After box initialization, I do 'ls', 'pwd', 'Retrieve commands from https://something/scaffolding/ghcup', 'Retrieve from ./setup-mise'."
-  echo -e "\t\tdefault: Do nothing"
+
 }
 
 [ ! $# = 0 ] && usage && exit 0
@@ -81,41 +72,6 @@ if [ -n "$ssh_agent_socket" ]; then
     echo "BOX_SSH_AGENT_SOCKET is not an existing UNIX socket: $ssh_agent_socket" >&2
     exit 2
   fi
-fi
-
-box_initialization_post_hook=
-if [[ "${BOX_INIT_POST_HOOK}" ]]; then
-  IFS=';' read -ra elements <<< "${BOX_INIT_POST_HOOK}"
-  for element in "${elements[@]}"; do
-    if [[ "$element" =~ ":" ]]; then
-      prefix=$(echo "$element" | cut -d':' -f1)
-      value=$(echo "$element" | cut -d':' -f2-)
-      case "$prefix" in
-        "r")
-          content=$(curl -s "$value")
-          processed_element="$content"
-          ;;
-        "l")
-          if [[ -f "$value" ]]; then
-            content=$(cat "$value")
-            processed_element="$content"
-          else
-            echo "Error: File not found at $value"
-            exit 1
-          fi
-          ;;
-        *)
-          processed_element="$value"
-          ;;
-      esac
-    else
-      processed_element="$element"
-    fi
-    if [[ -n "$box_initialization_post_hook" ]]; then
-      box_initialization_post_hook+="\n\t"
-    fi
-    box_initialization_post_hook+="$processed_element"
-  done
 fi
 
 function create_with_confirmation
@@ -302,7 +258,7 @@ function initialize_box
   [ -f "\$marker" ] && [ "\$(cat "\$marker")" = "\$BOX_CONTAINER_INSTANCE" ] && return 0
   mkdir -p -- "\${XDG_CONFIG_HOME:-\$HOME/.config}" || return 1
 
-  # Provisioning is explicit; never execute arbitrary post-init hooks.
+  # Provisioning is explicit; project-local setup is executed separately.
   case "\${BOX_PROVISIONER:-}" in
     "")
       if [ -n "\${MI_REPO_PATH:-}" ]; then
@@ -339,10 +295,17 @@ function initialize_box
   generate_bashrc
 
   echo "generated ${home_name}/.bashrc"
+  # Run project-local setup inside the container, after Mi and shell setup.
+  # Invoke Bash as a subprocess; do not source it into Boxkit's shell.
+  local setup_script="${box_entrypoint_path}/box_setup.sh"
+  if [ -e "\$setup_script" ] || [ -L "\$setup_script" ]; then
+    [ -f "\$setup_script" ] || { echo "Invalid box_setup.sh: \$setup_script" >&2; return 1; }
+    echo "Running \$setup_script"
+    (cd -- "${box_entrypoint_path}" && bash "\$setup_script") || return 1
+  fi
   mkdir -p -- "${box_entrypoint_path}/.distrobox" || return 1
   printf '%s\\n' "\$BOX_CONTAINER_INSTANCE" > "\$marker" || return 1
 
-  # Arbitrary post-initialization shell execution is intentionally disabled.
 }
 
 case "\${cmd}" in
