@@ -96,8 +96,9 @@ export BOX_TEST_ENTER_LOG="$tmp/enter-invocations"
 export HOME="$tmp/host-home"
 mkdir -p "$HOME"
 unset CONTAINER_ID
+rm -f -- "$tmp/project/.distrobox/initialized"
 cd "$tmp/project"
-BOX_PROVISIONER=none bash -x ./box e
+BOX_PROVISIONER=none bash ./box e
 test -f .distrobox/initialized
 test -f .distrobox/home/.bashrc
 test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 1
