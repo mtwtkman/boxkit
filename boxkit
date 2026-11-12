@@ -1,378 +1,322 @@
-#!/bin/bash
-command -v distrobox >/dev/null 2>&1 || { echo "distrobox not found" >&2; exit 1; }
-
-function usage
-{
-  if [ "${README_GEN}" ]; then
-    entrypoint_default='<Project root path>'
-  else
-    entrypoint_default="$(pwd)"
-  fi
-  echo "boxkit is a helper tool for building development environment by using distrobox."
-  echo ""
-  echo "USAGE:"
-  echo -e "\t[OPTIONS] ./boxkit"
-  echo ""
-  echo "OPTIONS:"
-  echo -e "\tDISTROBOX_CONTAINER_NAME"
-  echo -e "\t\tA name of your development container created by distrobox."
-  echo -e "\t\tIf it wan't set then boxkit prompt will ask you it."
-  echo ""
-  echo -e "\tBOX_ENTRYPOINT_NAME"
-  echo -e "\t\tThe entrypoint of result objects created by boxkit."
-  echo -e "\t\tThis value is regarded as relative path under from a project root."
-  echo -e "\t\tdefault: ${entrypoint_default}"
-  echo ""
-  echo -e "\tDISTROBOX_HOME_NAME"
-  echo -e "\t\tA name of custom home directory name for your development container."
-  echo -e "\t\tdefault: \${BOX_ENTRYPOINT_NAME}/.distrobox/home"
-  echo ""
-  echo -e "\tBOX_SCRIPT_NAME"
-  echo -e "\t\tThe script name of the thin wrapper for distrobox."
-  echo -e "\t\tdefault: \${BOX_ENTRYPOINT_NAME}/box"
-  echo ""
-  echo -e "\tDISTROBOX_IMAGE_NAME"
-  echo -e "\t\tWhat image for creating your development container image."
-  echo -e "\t\tdefault: Up to your distrobox config"
-  echo ""
-  echo -e "\tBOX_SSH_AGENT_SOCKET"
-  echo -e "\t\tOptional stable absolute path to a host ssh-agent UNIX socket."
-  echo -e "\t\tWhen set, bind-mount it read-write into the container and set SSH_AUTH_SOCK."
-  echo -e "\t\tThe socket must exist when generating the manifest."
-  echo ""
-
-}
-
-[ ! $# = 0 ] && usage && exit 0
-
-container_name="$(basename $(realpath $(pwd)))-dev"
-
-if [ ! "${DISTROBOX_CONTAINER_NAME}" ]; then
-  read -p "Please input name for your development container if you want. (default: ${container_name}) > " user_input_container_name
-  [ ! -z "${user_input_container_name}" ] && container_name="${user_input_container_name}"
-else
-  container_name="${DISTROBOX_CONTAINER_NAME}"
-fi
-
-echo -e "Your development container name is \e[33m${container_name}\e[0m"
-
-box_entrypoint_path="$(readlink -f ${BOX_ENTRYPOINT_NAME:-$(pwd)})"
-distrobox_manifest_path="${box_entrypoint_path}/distrobox.ini"
-home_name="${box_entrypoint_path}/${DISTROBOX_HOME_NAME:-.distrobox/home}"
-box_script_name="${BOX_SCRIPT_NAME:-box}"
-box_script_path="${box_entrypoint_path}/${box_script_name}"
-image_name="${DISTROBOX_IMAGE_NAME}"
-ssh_agent_socket="${BOX_SSH_AGENT_SOCKET:-}"
-if [ -n "$ssh_agent_socket" ]; then
-  if [[ "$ssh_agent_socket" != /* || "$ssh_agent_socket" == *[[:space:]]* || "$ssh_agent_socket" == *:* || "$ssh_agent_socket" == *\"* || "$ssh_agent_socket" == *\\* ]]; then
-    echo "BOX_SSH_AGENT_SOCKET must be an absolute path without whitespace, colons or quoting characters." >&2
-    exit 2
-  fi
-  if [ ! -S "$ssh_agent_socket" ]; then
-    echo "BOX_SSH_AGENT_SOCKET is not an existing UNIX socket: $ssh_agent_socket" >&2
-    exit 2
-  fi
-fi
-
-function create_with_confirmation
-{
-  local target=$1
-  local target_exists=1
-  [ -e "$target" ] && target_exists=0
-  [ "${target_exists}" = "0" ] && { echo "Refusing to overwrite existing $target" >&2; return 1; }
-
-  # Never delete existing container data during scaffolding.
-
-  shift
-  "$@"
-  echo -e "create \e[33m${target}.\e[0m"
-}
-
-function generate_distrobox_manifest
-{
-  echo "[${container_name}]" > "$distrobox_manifest_path"
-  [ "${image_name}" ] && echo $"image=${image_name}" >> "$distrobox_manifest_path"
-  if [ -n "$ssh_agent_socket" ]; then
-    printf 'additional_flags="--volume %s:/run/boxkit-ssh-agent.sock --env SSH_AUTH_SOCK=/run/boxkit-ssh-agent.sock"\\n' "$ssh_agent_socket" >> "$distrobox_manifest_path"
-  fi
-  cat <<EOF >> $distrobox_manifest_path
-additional_packages="fd fzf git neovim ripgrep make gcc"
-home=${home_name}
-hostname=distrobox
-init_hooks=export XDG_CONFIG_HOME=${home_name}/.config
-init_hooks=export XDG_CACHE_HOME=${home_name}/.cache
-init_hooks=export XDG_STATE_HOME=${home_name}/.local/state
-init_hooks=export XDG_DATA_HOME=${home_name}/.local/share
-EOF
-}
-
-function generate_box_script
-{
-cat <<BOX > "$box_script_path"
 #!/usr/bin/env bash
+set -euo pipefail
 
-function show_box_script_usage
-{
-  echo ""
-  echo "${box_script_name} is a thin wrapper to manipulate distrobox handy."
-  echo ""
-  echo "USAGE:"
-  echo -e "\\t./${box_script_name} [COMMAND] [OPTION]"
-  echo ""
-  echo "COMMANDS:"
-  echo -e "\\tenter | e [-r]"
-  echo -e "\\t\\tEnter your development container via distrobox. If the container does not exist, it will be created."
-  echo -e "\\t\\tUse -r to recreate the container; the project-local HOME is preserved."
-  echo ""
-  echo -e "\\tInitialization runs automatically on first enter"
-  echo -e "\\t\\tThe first enter asks whether to provision Mi."
-
-  echo ""
-  echo -e "\\tstop | s"
-  echo -e "\\t\\tStop the development container."
+die() { printf 'boxkit: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'boxkit: warning: %s\n' "$*" >&2; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
+trim() { local x="$1"; x="\${x#"\${x%%[![:space:]]*}"}"; x="\${x%"\${x##*[![:space:]]}"}"; printf '%s' "$x"; }
+script_path() { readlink -f -- "\${BASH_SOURCE[0]}"; }
+project_dir() { cd -- "$(dirname -- "$(script_path)")" && pwd -P; }
+valid_bool() { [[ "$1" == true || "$1" == false ]] || die "expected true/false, got $1"; }
+usage() {
+  cat <<'HELP'
+Usage: boxkit init | enter|e [-r] | exec COMMAND... | stop|s | rm | list|ls
+  init             Generate boxkit.ini and ./box (never overwrite existing files).
+  enter, e [-r]    Create/start and enter, -r explicitly recreates.
+  exec COMMAND...  Run a command in an existing running container.
+  stop, s          Stop the container.
+  rm               Remove the container (preserves project HOME).
+  list, ls         Show boxkit-managed containers.
+Run ./box from a project after initialization.
+HELP
 }
+create_default() {
+  local dst="$1" name
+  need readlink
+  mkdir -p -- "$dst"
+  [[ ! -e "$dst/boxkit.ini" && ! -L "$dst/boxkit.ini" ]] || die "refusing to overwrite $dst/boxkit.ini"
+  [[ ! -e "$dst/box" && ! -L "$dst/box" ]] || die "refusing to overwrite $dst/box"
+  name="$(basename "$dst")-dev"
+  cat > "$dst/boxkit.ini" <<EOF
+[container]
+name = $name
+engine = podman
+image = docker.io/library/debian:13
+home = .boxkit/home
 
-[ \$# = 0 ] && show_box_script_usage && exit 0
+[integration]
+ssh_agent = true
+wayland = true
+gpu = false
 
-cmd="\$1"
+[network]
+mode = private
+# publish = 8080:8080
 
-shift
-
-function container_id
-{
-  distrobox list | awk -F '|' -v name="${container_name}" '
-    NR > 1 {
-      id = \$1; candidate = \$2
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", candidate)
-      if (candidate == name) { print id; exit }
-    }'
-}
-
-function prepare_ssh_agent
-{
-  local socket="\${BOX_SSH_AGENT_SOCKET:-\${SSH_AUTH_SOCK:-}}"
-  local marker="${box_entrypoint_path}/.distrobox/ssh-agent-source"
-  local existing=0
-  [ -n "\$(container_id)" ] && existing=1
-  # Recreation must refresh the forwarding manifest even when a container exists.
-  [ "\${BOX_RECREATE:-0}" = 1 ] && existing=0
-  if [ -z "\$socket" ] || [ ! -S "\$socket" ]; then
-    echo "Warning: no active host ssh-agent socket; forwarding disabled." >&2
-    if [ "\$existing" = 1 ] && [ -f "\$marker" ]; then
-      echo "Existing container was configured for SSH forwarding; check agent availability." >&2
-    fi
-    return 0
-  fi
-  case "\$socket" in
-    /*) ;;
-    *) echo "SSH_AUTH_SOCK must be an absolute path" >&2; return 1 ;;
-  esac
-  case "\$socket" in
-    *[[:space:]]*|*:*|*\\*|*\"*) echo "Unsupported SSH_AUTH_SOCK path" >&2; return 1 ;;
-  esac
-  if [ "\$existing" = 1 ]; then
-    if [ -f "\$marker" ] && [ "\$(cat "\$marker")" != "\$socket" ]; then
-      echo "Warning: agent socket changed; recreate container to refresh forwarding." >&2
-    elif [ ! -f "\$marker" ]; then
-      echo "Warning: existing container may lack SSH forwarding; recreate to enable." >&2
-    fi
-    return 0
-  fi
-  mkdir -p "${box_entrypoint_path}/.distrobox"
-  # Update only the forwarding entry in the generated manifest.
-  sed -i '/^additional_flags="--volume .*:\/run\/boxkit-ssh-agent.sock /d' "${distrobox_manifest_path}"
-  printf 'additional_flags="--volume %s:/run/boxkit-ssh-agent.sock --env SSH_AUTH_SOCK=/run/boxkit-ssh-agent.sock"\n' "\$socket" >> "${distrobox_manifest_path}"
-  printf '%s\n' "\$socket" > "\$marker"
-}
-
-function create_box
-{
-  [ "\${CONTAINER_ID}" ] && return 0
-  # Preserve the existing container HOME even when recreating the container.
-  if [ -n "\$(container_id)" ]; then
-    distrobox assemble rm --file "$distrobox_manifest_path" || return 1
-  fi
-  distrobox assemble create --file "$distrobox_manifest_path" || return 1
-}
-
-function generate_bashrc
-{
-  cat <<EOF > "${home_name}/.bashrc"
-#!/bin/sh
-
-export BOX_INITIALIZED=1
-
-alias l="ls -CF"
-alias la="ls -A"
-alias ll="ls -alF"
-alias vim="nvim"
-
-source /usr/share/bash-completion//bash_completion
-source /usr/share/bash-completion/completions/git
-source /usr/share/git/completion/git-completion.bash
-source /usr/share/git/completion/git-prompt.sh
-
-export FZF_DEFAULT_COMMAND="rg --files --no-ignore --hidden --follow -g \"!{.git,node_modules}/*\" 2> /dev/null"
-export FZF_DEFAULT_OPTS="""
---reverse
---extended
---multi
---inline-info
---prompt='fzf>'
---ansi
---preview='cat {}'
---bind=ctrl-f:page-down,ctrl-b:page-up,'ctrl-v:become(vim {})',ctrl-^:first,ctrl-/:last
---color=bg+:#313244,spinner:#f5e0dc,hl:#f38ba8
---color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
---color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8
-"""
-export FZF_CTRL_T_COMMAND="\\${FZF_DEFAULT_COMMAND}"
-
-eval "\\\$(fzf --bash)"
-
-export GIT_PS1_SHOWCOLORHINTS=true
-ps1_git='\\\$(__git_ps1 " (%s)")'
-ps1_distrobox=" : \e[33m\${CONTAINER_ID}\e[0m"
-export PS1="\w\\\${ps1_git} - \\\${ps1_distrobox}\n\$ "
+[mounts]
+# mount = ./data|/data|rw
+# mount = ~/.config/nvim|/home/dev/.config/nvim|ro
 EOF
+  # Self-copy avoids the previous nested heredoc quoting problem.
+  cp -- "$(script_path)" "$dst/box"
+  chmod +x "$dst/box"
+  mkdir -p -- "$dst/.boxkit/state" "$dst/.boxkit/home"
+  printf 'Created %s/boxkit.ini and %s/box\n' "$dst" "$dst"
 }
-
-function initialize_box
-{
-  local marker="${box_entrypoint_path}/.distrobox/initialized"
-  [ -n "\${BOX_CONTAINER_INSTANCE:-}" ] || { echo "Missing container instance ID" >&2; return 1; }
-  [ -f "\$marker" ] && [ "\$(cat "\$marker")" = "\$BOX_CONTAINER_INSTANCE" ] && return 0
-  mkdir -p -- "\${XDG_CONFIG_HOME:-\$HOME/.config}" || return 1
-
-  # Provisioning is explicit; project-local setup is executed separately.
-  case "\${BOX_PROVISIONER:-}" in
-    "")
-      if [ -n "\${MI_REPO_PATH:-}" ]; then
-        echo "MI_REPO_PATH requires BOX_PROVISIONER=mi" >&2
-        return 1
-      fi
-      ;;
+NAME='' ENGINE=podman IMAGE='' HOME_PATH=.boxkit/home
+SSH_AGENT=true WAYLAND=true GPU=false NETWORK=private
+declare -a MOUNTS=() PORTS=()
+load_config() {
+  local file="$ROOT/boxkit.ini" section='' line key value
+  [[ -f "$file" ]] || die "missing $file; run boxkit init"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="$(trim "$line")"
+    [[ -z "$line" || "$line" == \#* || "$line" == \;* ]] && continue
+    if [[ "$line" =~ ^\[([a-z]+)\]$ ]]; then section="\${BASH_REMATCH[1]}"; continue; fi
+    [[ "$line" == *=* ]] || die "invalid INI line: $line"
+    key="$(trim "\${line%%=*}")"
+    value="$(trim "\${line#*=}")"
+    case "$section.$key" in
+      container.name) NAME="$value";;
+      container.engine) ENGINE="$value";;
+      container.image) IMAGE="$value";;
+      container.home) HOME_PATH="$value";;
+      integration.ssh_agent) SSH_AGENT="$value";;
+      integration.wayland) WAYLAND="$value";;
+      integration.gpu) GPU="$value";;
+      network.mode) NETWORK="$value";;
+      network.publish) PORTS+=("$value");;
+      mounts.mount) MOUNTS+=("$value");;
+      *) die "unknown setting $section.$key";;
+    esac
+  done < "$file"
+  [[ "$NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || die "invalid container name"
+  [[ -n "$IMAGE" ]] || die "container.image required"
+  [[ "$ENGINE" == podman ]] || die "engine '$ENGINE' not supported yet (currently: podman)"
+  valid_bool "$SSH_AGENT"; valid_bool "$WAYLAND"; valid_bool "$GPU"
+  [[ "$NETWORK" == private || "$NETWORK" == none ]] || die "network.mode must be private or none"
+  [[ "$HOME_PATH" != /* && "$HOME_PATH" != *..* ]] || die "container.home must be a relative path without '..'"
+  LOCAL_HOME="$ROOT/$HOME_PATH"
+  mkdir -p -- "$LOCAL_HOME" "$ROOT/.boxkit/state" "$LOCAL_HOME/.boxkit-runtime"
+  chmod 700 "$LOCAL_HOME/.boxkit-runtime"
+  STATE_DIR="$ROOT/.boxkit/state"
+}
+resolve_source() {
+  local x="$1"
+  case "$x" in
+    '~') x="$HOST_HOME";;
+    '~/'*) x="$HOST_HOME/\${x#~/}";;
+    /*) ;;
+    *) x="$ROOT/$x";;
+  esac
+  readlink -m -- "$x"
+}
+validate_mount() {
+  local item="$1" source destination mode extra
+  IFS='|' read -r source destination mode extra <<< "$item"
+  [[ -n "$source" && "$destination" == /* && -z "$extra" ]] || die "mount must be source|/destination|ro-or-rw"
+  [[ "$mode" == ro || "$mode" == rw ]] || die "mount mode must be ro or rw"
+  [[ "$destination" != / && "$destination" != /workspace && "$destination" != /home/dev && "$destination" != /run && "$destination" != /proc ]] || die "reserved mount destination: $destination"
+  source="$(resolve_source "$source")"
+  [[ -e "$source" ]] || die "mount source does not exist: $source"
+  MOUNT_ARGS+=(--mount "type=bind,src=$source,dst=$destination,$([ "$mode" = ro ] && printf readonly || printf rw)")
+}
+detect_integrations() {
+  local socket='' wd='' rt=''
+  AGENT_SOCKET='' WAYLAND_SOCKET=''
+  if [[ "$SSH_AGENT" == true ]]; then
+    socket="\${BOX_SSH_AGENT_SOCKET:-\${SSH_AUTH_SOCK:-}}"
+    if [[ -n "$socket" && -S "$socket" ]]; then
+      AGENT_SOCKET="$(readlink -f -- "$socket")"
+    else
+      warn "SSH agent unavailable; forwarding disabled for this container instance"
+    fi
+  fi
+  if [[ "$WAYLAND" == true ]]; then
+    wd="\${WAYLAND_DISPLAY:-}"
+    rt="\${XDG_RUNTIME_DIR:-}"
+    if [[ "$wd" == /* ]]; then socket="$wd"; else socket="$rt/$wd"; fi
+    [[ -n "$wd" && -S "$socket" ]] || die "Wayland enabled but socket unavailable: $socket"
+    WAYLAND_SOCKET="$(readlink -f -- "$socket")"
+  fi
+}
+fingerprint() {
+  local path
+  { cat "$ROOT/boxkit.ini"
+    printf '\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET"
+    for path in "$AGENT_SOCKET" "$WAYLAND_SOCKET"; do
+      if [[ -n "$path" ]]; then stat -Lc '%d:%i' -- "$path"; fi
+    done
+  } | sha256sum | awk '{print $1}'
+}
+container_id() {
+  podman container inspect --format '{{.Id}}' "$NAME" 2>/dev/null || :
+}
+container_running() {
+  [[ "$(podman container inspect --format '{{.State.Running}}' "$NAME" 2>/dev/null || :)" == true ]]
+}
+make_container() {
+  local item mapping source destination mode proto hostport containerport port extra
+  local -a args=(
+    create --name "$NAME" --label io.boxkit.managed=true
+    --userns=keep-id --user "$(id -u):$(id -g)"
+    --workdir /workspace
+    --env HOME=/home/dev
+    --env XDG_CONFIG_HOME=/home/dev/.config
+    --env XDG_CACHE_HOME=/home/dev/.cache
+    --env XDG_DATA_HOME=/home/dev/.local/share
+    --env XDG_STATE_HOME=/home/dev/.local/state
+    --network "$([[ "$NETWORK" == none ]] && printf none || printf slirp4netns)"
+    --security-opt=no-new-privileges
+    --mount "type=bind,src=$ROOT,dst=/workspace,rw"
+    --mount "type=bind,src=$LOCAL_HOME,dst=/home/dev,rw"
+  )
+  local -a MOUNT_ARGS=()
+  for item in "\${MOUNTS[@]}"; do validate_mount "$item"; done
+  args+=("\${MOUNT_ARGS[@]}")
+  for port in "\${PORTS[@]}"; do
+    [[ "$NETWORK" == private ]] || die "ports require network.mode=private"
+    [[ "$port" =~ ^[0-9]+:[0-9]+$ ]] || die "publish must be host-port:container-port"
+    args+=(-p "127.0.0.1:$port")
+  done
+  if [[ -n "$AGENT_SOCKET" ]]; then
+    args+=(--mount "type=bind,src=$AGENT_SOCKET,dst=/home/dev/.boxkit-runtime/ssh-agent.sock,rw"
+           --env SSH_AUTH_SOCK=/home/dev/.boxkit-runtime/ssh-agent.sock)
+  fi
+  if [[ -n "$WAYLAND_SOCKET" ]]; then
+    args+=(--mount "type=bind,src=$WAYLAND_SOCKET,dst=/home/dev/.boxkit-runtime/wayland-0,rw"
+           --env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime
+           --env WAYLAND_DISPLAY=wayland-0)
+  fi
+  if [[ "$GPU" == true ]]; then
+    [[ -d /dev/dri ]] || die "GPU enabled but /dev/dri missing"
+    args+=(--device /dev/dri:/dev/dri --group-add keep-groups)
+  fi
+  podman "\${args[@]}" --entrypoint /bin/sh "$IMAGE" -c 'while :; do sleep 3600; done' >/dev/null
+  fingerprint > "$STATE_DIR/runtime-fingerprint"
+}
+ensure_container() {
+  local recreate="$1" id actual expected
+  detect_integrations
+  expected="$(fingerprint)"
+  id="$(container_id)"
+  if [[ "$recreate" == true && -n "$id" ]]; then
+    podman rm -f "$NAME" >/dev/null
+    id=''
+  fi
+  if [[ -n "$id" ]]; then
+    actual="$(cat "$STATE_DIR/runtime-fingerprint" 2>/dev/null || :)"
+    if [[ "$actual" != "$expected" ]]; then
+      die "container configuration or socket changed; run './box enter -r' to recreate (HOME preserved)"
+    fi
+  else
+    make_container
+  fi
+  if ! container_running; then podman start "$NAME" >/dev/null; fi
+}
+bootstrap_packages() {
+  local bootstrap
+  bootstrap='set -e
+if command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq bash git curl ca-certificates openssh-client
+elif command -v apk >/dev/null 2>&1; then
+  apk add --no-cache bash git curl ca-certificates openssh-client
+elif command -v dnf >/dev/null 2>&1; then
+  dnf install -y bash git curl ca-certificates openssh-clients
+elif command -v pacman >/dev/null 2>&1; then
+  pacman -Sy --noconfirm --needed bash git curl ca-certificates openssh
+else
+  echo "Unsupported image package manager; supply bash git curl and ssh manually" >&2
+  exit 1
+fi'
+  podman exec --user 0 "$NAME" /bin/sh -c "$bootstrap"
+}
+init_inside() {
+  local marker=/workspace/.boxkit/state/initialized setup=/workspace/box_setup.sh
+  local instance="\${BOX_CONTAINER_INSTANCE:-}" provisioner="\${BOX_PROVISIONER:-none}"
+  [[ -n "$instance" ]] || die "missing BOX_CONTAINER_INSTANCE"
+  case "$provisioner" in
     none) ;;
     mi)
-      if [ -n "\${MI_REPO_PATH:-}" ]; then
-        [ -f "\${MI_REPO_PATH}/mi" ] || { echo "MI_REPO_PATH must reference a Mi checkout" >&2; return 1; }
-        MI_PROFILE=container bash "\${MI_REPO_PATH}/mi" deploy || return 1
+      if [[ -n "\${MI_REPO_PATH:-}" ]]; then
+        [[ -f "$MI_REPO_PATH/mi" ]] || die "MI_REPO_PATH is not accessible inside the container"
+        MI_PROFILE=container bash "$MI_REPO_PATH/mi" deploy
       else
-        command -v curl >/dev/null 2>&1 || { echo "Mi provisioning requires curl" >&2; return 1; }
-        local setup_file
-        setup_file="\$(mktemp)" || return 1
-        if ! curl -fsSL "\${BOX_MI_SETUP_URL:-https://raw.githubusercontent.com/mtwtkman/mi/main/setup}" -o "\$setup_file"; then
-          rm -f -- "\$setup_file"
-          echo "Unable to download Mi setup" >&2
-          return 1
-        fi
-        MI_PROFILE=container bash "\$setup_file"
-        local result=\$?
-        rm -f -- "\$setup_file"
-        [ "\$result" -eq 0 ] || return "\$result"
+        local temp
+        temp="$(mktemp)"
+        curl -fsSL "\${BOX_MI_SETUP_URL:-https://raw.githubusercontent.com/mtwtkman/mi/main/setup}" -o "$temp" || { rm -f "$temp"; return 1; }
+        MI_PROFILE=container bash "$temp" || { rm -f "$temp"; return 1; }
+        rm -f "$temp"
       fi
       ;;
-    *)
-      echo "Unsupported BOX_PROVISIONER: \${BOX_PROVISIONER}" >&2
-      return 1
-      ;;
+    *) die "unsupported BOX_PROVISIONER: $provisioner";;
   esac
-
-  generate_bashrc
-
-  echo "generated ${home_name}/.bashrc"
-  # Run project-local setup inside the container, after Mi and shell setup.
-  # Invoke Bash as a subprocess; do not source it into Boxkit's shell.
-  local setup_script="${box_entrypoint_path}/box_setup.sh"
-  if [ -e "\$setup_script" ] || [ -L "\$setup_script" ]; then
-    [ -f "\$setup_script" ] || { echo "Invalid box_setup.sh: \$setup_script" >&2; return 1; }
-    echo "Running \$setup_script"
-    (cd -- "${box_entrypoint_path}" && bash "\$setup_script") || return 1
+  if [[ ! -e /home/dev/.bashrc ]]; then
+    cat > /home/dev/.bashrc <<'RC'
+export BOX_INITIALIZED=1
+alias ll='ls -alF'
+RC
   fi
-  mkdir -p -- "${box_entrypoint_path}/.distrobox" || return 1
-  printf '%s\\n' "\$BOX_CONTAINER_INSTANCE" > "\$marker" || return 1
-
+  if [[ -e "$setup" || -L "$setup" ]]; then
+    [[ -f "$setup" ]] || die "invalid box_setup.sh"
+    (cd /workspace && bash "$setup")
+  fi
+  printf '%s\n' "$instance" > "$marker"
 }
-
-case "\${cmd}" in
-  enter|e)
-    [ -n "\${CONTAINER_ID:-}" ] && echo "Already in distrobox container, so do nothing" && exit 0
-    if [ "\$#" -gt 1 ] || { [ "\$#" -eq 1 ] && [ "\$1" != "-r" ]; }; then
-      echo "Usage: ./box enter [-r]" >&2
-      exit 2
-    fi
-    recreate=0
-    [ "\${1:-}" = "-r" ] && recreate=1
-    marker="${box_entrypoint_path}/.distrobox/initialized"
-    id="\$(container_id)"
-    if [ "\$recreate" -eq 1 ]; then
-      BOX_RECREATE=1 prepare_ssh_agent || exit 1
-      create_box || exit 1
-      id="\$(container_id)"
-    elif [ -z "\$id" ]; then
-      prepare_ssh_agent || exit 1
-      create_box || exit 1
-      id="\$(container_id)"
-    else
-      prepare_ssh_agent || exit 1
-    fi
-    if [ -z "\$id" ]; then
-      echo "Container ${container_name} was not found after creation." >&2
-      exit 1
-    fi
-    if [ ! -f "\$marker" ] || [ "\$(cat "\$marker")" != "\$id" ]; then
-      provisioner="\${BOX_PROVISIONER:-}"
-      case "\$provisioner" in
-        mi|none) ;;
-        "")
-          if [ ! -t 0 ]; then
-            echo "First enter requires terminal confirmation or BOX_PROVISIONER=mi|none." >&2
-            exit 1
-          fi
-          printf 'Provision this container with Mi? [y/N] '
-          IFS= read -r answer || exit 1
-          case "\$answer" in
-            y|Y) provisioner=mi ;;
-            *) provisioner=none ;;
-          esac
-          ;;
-        *) echo "Unsupported BOX_PROVISIONER: \$provisioner" >&2; exit 1 ;;
-      esac
-      # Only the internal init process writes the marker, after successful setup.
-      distrobox enter --no-workdir "${container_name}" -- /usr/bin/env "BOX_PROVISIONER=\$provisioner" "BOX_CONTAINER_INSTANCE=\$id" "MI_REPO_PATH=\${MI_REPO_PATH:-}" "BOX_MI_SETUP_URL=\${BOX_MI_SETUP_URL:-}" /bin/bash "${box_script_path}" _init || exit 1
-      if [ ! -f "\$marker" ] || [ "\$(cat "\$marker")" != "\$id" ]; then
-        echo "Container initialization did not complete; retry ./box enter." >&2
-        exit 1
-      fi
-    fi
-    host_dir="\$(pwd | sed 's/\/run\/host//g')"
-    distrobox enter --no-workdir "${container_name}" -- /bin/sh -c "cd \"\${host_dir}\" 2>/dev/null; exec \"\${SHELL:-/bin/bash}\""
-    ;;
-  _init)
-    [ -z "\${CONTAINER_ID:-}" ] && echo "Internal init requires a container." >&2 && exit 1
-    initialize_box
-    ;;
-  init|i)
-    echo "Initialization is automatic on first ./box enter." >&2
-    exit 1
-    ;;
-  bashrc|b) generate_bashrc;;
-  replace|r) distrobox assemble create --replace --file "${distrobox_manifest_path}";;
-  stop|s)
-    [ "\${CONTAINER_ID}" ] && exit 0
-    [ -z "\$(container_id)" ] && exit 0
-    distrobox stop "${container_name}"
-    ;;
-  *) show_box_script_usage;;
-esac
-BOX
+initialize_if_needed() {
+  local id marker="$STATE_DIR/initialized" provisioner answer
+  id="$(container_id)"
+  [[ -n "$id" ]] || die "container missing"
+  if [[ -f "$marker" && "$(cat "$marker")" == "$id" ]]; then return; fi
+  provisioner="\${BOX_PROVISIONER:-}"
+  if [[ -z "$provisioner" ]]; then
+    [[ -t 0 ]] || die "first enter requires BOX_PROVISIONER=mi|none without a terminal"
+    printf 'Provision this container with Mi? [y/N] ' >&2
+    IFS= read -r answer
+    if [[ "$answer" == y || "$answer" == Y ]]; then provisioner=mi; else provisioner=none; fi
+  fi
+  [[ "$provisioner" == mi || "$provisioner" == none ]] || die "invalid BOX_PROVISIONER"
+  bootstrap_packages
+  # Never mark initialization complete on failure.
+  podman exec --user "$(id -u):$(id -g)" \
+    --env "BOX_CONTAINER_INSTANCE=$id" --env "BOX_PROVISIONER=$provisioner" \
+    --env "MI_REPO_PATH=\${MI_REPO_PATH:-}" \
+    --env "BOX_MI_SETUP_URL=\${BOX_MI_SETUP_URL:-}" \
+    "$NAME" /bin/bash /workspace/box _init
+  [[ -f "$marker" && "$(cat "$marker")" == "$id" ]] || die "container initialization incomplete"
 }
-
-[ ! -d "${box_entrypoint_path}" ] && mkdir -p ${box_entrypoint_path}
-mkdir -p -- "$home_name"
-create_with_confirmation "$distrobox_manifest_path" generate_distrobox_manifest || exit 1
-create_with_confirmation "$box_script_path" generate_box_script || exit 1
-chmod +x "$box_script_path"
-
-echo 'Now you can run `./box enter` to start distrobox.'
+main() {
+  local command="\${1:-}" recreate=false
+  if [[ "$command" == init ]]; then
+    [[ "$#" -eq 1 ]] || die "usage: boxkit init"
+    create_default "$PWD"
+    return
+  fi
+  case "$command" in
+    -h|--help|'') usage; return;;
+  esac
+  ROOT="$(project_dir)"
+  HOST_HOME="$HOME"
+  if [[ "$command" == _init ]]; then init_inside; return; fi
+  load_config
+  need podman
+  case "$command" in
+    enter|e)
+      [[ "$#" -le 2 ]] || die "usage: ./box enter [-r]"
+      [[ "$#" -eq 1 || "\${2:-}" == -r ]] || die "usage: ./box enter [-r]"
+      [[ "\${2:-}" == -r ]] && recreate=true
+      ensure_container "$recreate"
+      initialize_if_needed
+      exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace "$NAME" /bin/bash -l
+      ;;
+    exec)
+      shift
+      [[ "$#" -gt 0 ]] || die "usage: ./box exec COMMAND..."
+      container_running || die "container not running; use ./box enter"
+      exec podman exec -it --user "$(id -u):$(id -g)" "$NAME" "$@"
+      ;;
+    stop|s)
+      if [[ -n "$(container_id)" ]] && container_running; then podman stop "$NAME"; fi
+      ;;
+    rm)
+      if [[ -n "$(container_id)" ]]; then podman rm -f "$NAME"; fi
+      ;;
+    list|ls)
+      podman ps -a --filter label=io.boxkit.managed=true --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+      ;;
+    *) die "unknown command $command";;
+  esac
+}
+main "$@"
