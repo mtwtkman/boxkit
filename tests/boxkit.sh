@@ -22,6 +22,19 @@ echo 'invalid_setting = true' >> boxkit.ini
 if bash ./box list 2>/dev/null; then echo 'invalid INI accepted' >&2; exit 1; fi
 sed -i '/invalid_setting = true/d' boxkit.ini
 sed -i 's/wayland = true/wayland = false/' boxkit.ini
+cat >> boxkit.ini <<'CONFIG'
+
+[packages]
+additional = fd fzf neovim ripgrep make gcc
+
+[setup]
+hook = echo 'Project initialization'
+
+[engine_args]
+create_arg = --hostname=haskell-dev
+create_arg = --env=EXAMPLE=value
+CONFIG
+
 # Provide a real host D-Bus socket for the integration tests.
 mkdir -p "$tmp/runtime"
 python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
@@ -75,6 +88,10 @@ export BOX_PROVISIONER=none
 ./box enter
 [[ -f .boxkit/state/initialized ]]
 grep -q 'create --name' "$BOX_TEST_LOG"
+grep -Fq -- '--hostname=haskell-dev' "$BOX_TEST_LOG"
+grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
+grep -Fq -- 'fd fzf neovim ripgrep make gcc' "$BOX_TEST_LOG"
+
 grep -q 'docker.io/library/archlinux:latest' "$BOX_TEST_LOG"
 grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
 grep -Fq -- "src=$tmp/runtime/bus,dst=/home/dev/.boxkit-runtime/bus" "$BOX_TEST_LOG"
@@ -99,6 +116,10 @@ for attempt in {1..60}; do [[ -S "$tmp/runtime/bus" ]] && break; sleep 0.05; don
 if ./box enter 2>/dev/null; then echo 'replaced bus socket accepted without recreation' >&2; exit 1; fi
 ./box enter -r
 grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
+# Shell syntax is not interpreted in create_arg values.
+sed -i 's/create_arg = --hostname=haskell-dev/create_arg = hostname=haskell-dev/' boxkit.ini
+if ./box list 2>/dev/null; then echo 'invalid create_arg accepted' >&2; exit 1; fi
+sed -i 's/create_arg = hostname=haskell-dev/create_arg = --hostname=haskell-dev/' boxkit.ini
 ./box exec git --version
 grep -q 'git --version' "$BOX_TEST_LOG"
 ./box stop
