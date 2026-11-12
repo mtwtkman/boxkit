@@ -4,8 +4,8 @@ set -euo pipefail
 die() { printf 'boxkit: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'boxkit: warning: %s\n' "$*" >&2; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
-trim() { local x="$1"; x="\${x#"\${x%%[![:space:]]*}"}"; x="\${x%"\${x##*[![:space:]]}"}"; printf '%s' "$x"; }
-script_path() { readlink -f -- "\${BASH_SOURCE[0]}"; }
+trim() { local x="$1"; x="${x#"${x%%[![:space:]]*}"}"; x="${x%"${x##*[![:space:]]}"}"; printf '%s' "$x"; }
+script_path() { readlink -f -- "${BASH_SOURCE[0]}"; }
 project_dir() { cd -- "$(dirname -- "$(script_path)")" && pwd -P; }
 valid_bool() { [[ "$1" == true || "$1" == false ]] || die "expected true/false, got $1"; }
 usage() {
@@ -62,10 +62,10 @@ load_config() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="$(trim "$line")"
     [[ -z "$line" || "$line" == \#* || "$line" == \;* ]] && continue
-    if [[ "$line" =~ ^\[([a-z]+)\]$ ]]; then section="\${BASH_REMATCH[1]}"; continue; fi
+    if [[ "$line" =~ ^\[([a-z]+)\]$ ]]; then section="${BASH_REMATCH[1]}"; continue; fi
     [[ "$line" == *=* ]] || die "invalid INI line: $line"
-    key="$(trim "\${line%%=*}")"
-    value="$(trim "\${line#*=}")"
+    key="$(trim "${line%%=*}")"
+    value="$(trim "${line#*=}")"
     case "$section.$key" in
       container.name) NAME="$value";;
       container.engine) ENGINE="$value";;
@@ -95,7 +95,7 @@ resolve_source() {
   local x="$1"
   case "$x" in
     '~') x="$HOST_HOME";;
-    '~/'*) x="$HOST_HOME/\${x#~/}";;
+    '~/'*) x="$HOST_HOME/${x#~/}";;
     /*) ;;
     *) x="$ROOT/$x";;
   esac
@@ -115,7 +115,7 @@ detect_integrations() {
   local socket='' wd='' rt=''
   AGENT_SOCKET='' WAYLAND_SOCKET=''
   if [[ "$SSH_AGENT" == true ]]; then
-    socket="\${BOX_SSH_AGENT_SOCKET:-\${SSH_AUTH_SOCK:-}}"
+    socket="${BOX_SSH_AGENT_SOCKET:-${SSH_AUTH_SOCK:-}}"
     if [[ -n "$socket" && -S "$socket" ]]; then
       AGENT_SOCKET="$(readlink -f -- "$socket")"
     else
@@ -123,8 +123,8 @@ detect_integrations() {
     fi
   fi
   if [[ "$WAYLAND" == true ]]; then
-    wd="\${WAYLAND_DISPLAY:-}"
-    rt="\${XDG_RUNTIME_DIR:-}"
+    wd="${WAYLAND_DISPLAY:-}"
+    rt="${XDG_RUNTIME_DIR:-}"
     if [[ "$wd" == /* ]]; then socket="$wd"; else socket="$rt/$wd"; fi
     [[ -n "$wd" && -S "$socket" ]] || die "Wayland enabled but socket unavailable: $socket"
     WAYLAND_SOCKET="$(readlink -f -- "$socket")"
@@ -156,15 +156,15 @@ make_container() {
     --env XDG_CACHE_HOME=/home/dev/.cache
     --env XDG_DATA_HOME=/home/dev/.local/share
     --env XDG_STATE_HOME=/home/dev/.local/state
-    --network "$([[ "$NETWORK" == none ]] && printf none || printf slirp4netns)"
     --security-opt=no-new-privileges
     --mount "type=bind,src=$ROOT,dst=/workspace,rw"
     --mount "type=bind,src=$LOCAL_HOME,dst=/home/dev,rw"
   )
   local -a MOUNT_ARGS=()
-  for item in "\${MOUNTS[@]}"; do validate_mount "$item"; done
-  args+=("\${MOUNT_ARGS[@]}")
-  for port in "\${PORTS[@]}"; do
+  for item in "${MOUNTS[@]}"; do validate_mount "$item"; done
+  args+=("${MOUNT_ARGS[@]}")
+  if [[ "$NETWORK" == none ]]; then args+=(--network none); fi
+  for port in "${PORTS[@]}"; do
     [[ "$NETWORK" == private ]] || die "ports require network.mode=private"
     [[ "$port" =~ ^[0-9]+:[0-9]+$ ]] || die "publish must be host-port:container-port"
     args+=(-p "127.0.0.1:$port")
@@ -182,7 +182,7 @@ make_container() {
     [[ -d /dev/dri ]] || die "GPU enabled but /dev/dri missing"
     args+=(--device /dev/dri:/dev/dri --group-add keep-groups)
   fi
-  podman "\${args[@]}" --entrypoint /bin/sh "$IMAGE" -c 'while :; do sleep 3600; done' >/dev/null
+  podman "${args[@]}" --entrypoint /bin/sh "$IMAGE" -c 'while :; do sleep 3600; done' >/dev/null
   fingerprint > "$STATE_DIR/runtime-fingerprint"
 }
 ensure_container() {
@@ -225,18 +225,18 @@ fi'
 }
 init_inside() {
   local marker=/workspace/.boxkit/state/initialized setup=/workspace/box_setup.sh
-  local instance="\${BOX_CONTAINER_INSTANCE:-}" provisioner="\${BOX_PROVISIONER:-none}"
+  local instance="${BOX_CONTAINER_INSTANCE:-}" provisioner="${BOX_PROVISIONER:-none}"
   [[ -n "$instance" ]] || die "missing BOX_CONTAINER_INSTANCE"
   case "$provisioner" in
     none) ;;
     mi)
-      if [[ -n "\${MI_REPO_PATH:-}" ]]; then
+      if [[ -n "${MI_REPO_PATH:-}" ]]; then
         [[ -f "$MI_REPO_PATH/mi" ]] || die "MI_REPO_PATH is not accessible inside the container"
         MI_PROFILE=container bash "$MI_REPO_PATH/mi" deploy
       else
         local temp
         temp="$(mktemp)"
-        curl -fsSL "\${BOX_MI_SETUP_URL:-https://raw.githubusercontent.com/mtwtkman/mi/main/setup}" -o "$temp" || { rm -f "$temp"; return 1; }
+        curl -fsSL "${BOX_MI_SETUP_URL:-https://raw.githubusercontent.com/mtwtkman/mi/main/setup}" -o "$temp" || { rm -f "$temp"; return 1; }
         MI_PROFILE=container bash "$temp" || { rm -f "$temp"; return 1; }
         rm -f "$temp"
       fi
@@ -260,7 +260,7 @@ initialize_if_needed() {
   id="$(container_id)"
   [[ -n "$id" ]] || die "container missing"
   if [[ -f "$marker" && "$(cat "$marker")" == "$id" ]]; then return; fi
-  provisioner="\${BOX_PROVISIONER:-}"
+  provisioner="${BOX_PROVISIONER:-}"
   if [[ -z "$provisioner" ]]; then
     [[ -t 0 ]] || die "first enter requires BOX_PROVISIONER=mi|none without a terminal"
     printf 'Provision this container with Mi? [y/N] ' >&2
@@ -272,13 +272,13 @@ initialize_if_needed() {
   # Never mark initialization complete on failure.
   podman exec --user "$(id -u):$(id -g)" \
     --env "BOX_CONTAINER_INSTANCE=$id" --env "BOX_PROVISIONER=$provisioner" \
-    --env "MI_REPO_PATH=\${MI_REPO_PATH:-}" \
-    --env "BOX_MI_SETUP_URL=\${BOX_MI_SETUP_URL:-}" \
+    --env "MI_REPO_PATH=${MI_REPO_PATH:-}" \
+    --env "BOX_MI_SETUP_URL=${BOX_MI_SETUP_URL:-}" \
     "$NAME" /bin/bash /workspace/box _init
   [[ -f "$marker" && "$(cat "$marker")" == "$id" ]] || die "container initialization incomplete"
 }
 main() {
-  local command="\${1:-}" recreate=false
+  local command="${1:-}" recreate=false
   if [[ "$command" == init ]]; then
     [[ "$#" -eq 1 ]] || die "usage: boxkit init"
     create_default "$PWD"
@@ -295,8 +295,8 @@ main() {
   case "$command" in
     enter|e)
       [[ "$#" -le 2 ]] || die "usage: ./box enter [-r]"
-      [[ "$#" -eq 1 || "\${2:-}" == -r ]] || die "usage: ./box enter [-r]"
-      [[ "\${2:-}" == -r ]] && recreate=true
+      [[ "$#" -eq 1 || "${2:-}" == -r ]] || die "usage: ./box enter [-r]"
+      [[ "${2:-}" == -r ]] && recreate=true
       ensure_container "$recreate"
       initialize_if_needed
       exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace "$NAME" /bin/bash -l
