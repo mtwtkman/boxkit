@@ -82,26 +82,23 @@ eval "$(ssh-agent -a "$HOME/.ssh/boxkit-agent.sock" -s)"
 ssh-add "$HOME/.ssh/id_ed25519"
 ```
 
-When generating a new Boxkit project, supply that path:
+By default, `./box enter` detects the host `SSH_AUTH_SOCK` when it creates a container. No explicit Boxkit setting is required. For a dedicated stable socket, set `SSH_AUTH_SOCK` on the host before entering:
 
 ```bash
-BOX_SSH_AGENT_SOCKET="$HOME/.ssh/boxkit-agent.sock" bash /path/to/boxkit
+export SSH_AUTH_SOCK="$HOME/.ssh/boxkit-agent.sock"
 ./box enter
 ssh-add -l
 ```
 
-The generated manifest includes a bind mount from the host agent socket to
+On first `./box enter`, Boxkit updates the manifest with a bind mount from the host agent socket to
 `/run/boxkit-ssh-agent.sock` and sets the container's `SSH_AUTH_SOCK` to
-that path. The path is captured at **generation time**; the socket must exist
-then. The default remains no forwarding. A new container can reuse the same
+that path. The socket is detected at **container creation time**. When no agent is available, Boxkit warns and proceeds without forwarding. A new container can reuse the same
 host agent socket across projects, provided each project's manifest opts in.
 
 **Lifecycle:** If the host agent is restarted and its socket is replaced,
 a running container's bind mount can point to the old socket inode. Recreate
 the container to refresh the mount. Use a login-session service to maintain
-the stable socket path; the example above is for manual setup only. For an
-already-generated manifest, add the flags manually or regenerate in a new
-directory (Boxkit deliberately refuses to overwrite existing manifests).
+the stable socket path; the example above is for manual setup only. For an existing container without forwarding, recreate it explicitly to apply the updated mount configuration.
 
 **Security:** Processes in a container with socket access can request SSH
 signatures using loaded host keys. Agent forwarding does not isolate
