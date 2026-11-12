@@ -1,1 +1,0 @@
-curl -fsSL https://claude.ai/install.sh && echo 'export PATH="$HOME/.local/bin/claude:$PATH"' >> ~/.bashrc

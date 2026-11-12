@@ -1,1 +1,0 @@
-curl https://mise.run/bash | sh && echo 'eval "$(mise activate bash)"' >> ~/.bashrc
