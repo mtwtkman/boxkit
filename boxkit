@@ -47,6 +47,16 @@ mode = private
 [mounts]
 # mount = ./data|/data|rw
 # mount = ~/.config/nvim|/home/dev/.config/nvim|ro
+
+[packages]
+# additional = fd fzf git neovim ripgrep make gcc
+
+[setup]
+# hook = echo 'Initial setup'
+
+[engine_args]
+# create_arg = --hostname=haskell-dev
+# create_arg = --env=EXAMPLE=value
 EOF
   # Self-copy avoids the previous nested heredoc quoting problem.
   cp -- "$(script_path)" "$dst/box"
@@ -56,7 +66,7 @@ EOF
 }
 NAME='' ENGINE=podman IMAGE='' HOME_PATH=.boxkit/home
 SSH_AGENT=true WAYLAND=true DBUS_SESSION=true GPU=false NETWORK=private
-declare -a MOUNTS=() PORTS=()
+declare -a MOUNTS=() PORTS=() PACKAGES=() HOOKS=() CREATE_ARGS=()
 load_config() {
   local file="$ROOT/boxkit.ini" section='' line key value
   [[ -f "$file" ]] || die "missing $file; run boxkit init"
@@ -79,6 +89,17 @@ load_config() {
       network.mode) NETWORK="$value";;
       network.publish) PORTS+=("$value");;
       mounts.mount) MOUNTS+=("$value");;
+      packages.additional)
+        local -a words=()
+        read -r -a words <<< "$value"
+        PACKAGES+=("${words[@]}")
+        ;;
+      setup.hook) [[ -n "$value" ]] || die "empty setup hook"; HOOKS+=("$value");;
+      engine_args.create_arg)
+        # Only option-form tokens; never evaluate shell code from configuration.
+        [[ "$value" =~ ^--[a-zA-Z][a-zA-Z0-9-]*(=.*)?$ ]] || die "create_arg must be one long option (use --option=value)"
+        CREATE_ARGS+=("$value")
+        ;;
       *) die "unknown setting $section.$key";;
     esac
   done < "$file"
@@ -86,6 +107,10 @@ load_config() {
   [[ -n "$IMAGE" ]] || die "container.image required"
   [[ "$ENGINE" == podman ]] || die "engine '$ENGINE' not supported yet (currently: podman)"
   valid_bool "$SSH_AGENT"; valid_bool "$WAYLAND"; valid_bool "$DBUS_SESSION"; valid_bool "$GPU"
+  local pkg
+  for pkg in "${PACKAGES[@]}"; do
+    [[ "$pkg" =~ ^[a-zA-Z0-9][a-zA-Z0-9.+_@:-]*$ ]] || die "invalid package name: $pkg"
+  done
   [[ "$NETWORK" == private || "$NETWORK" == none ]] || die "network.mode must be private or none"
   [[ "$HOME_PATH" != /* && "$HOME_PATH" != *..* ]] || die "container.home must be a relative path without '..'"
   LOCAL_HOME="$ROOT/$HOME_PATH"
@@ -204,6 +229,9 @@ make_container() {
   if [[ -n "$WAYLAND_SOCKET" || -n "$DBUS_SOCKET" ]]; then
     args+=(--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime)
   fi
+  # Engine-specific escape hatch; applied at creation, before image/command.
+  # A changed argument changes the config fingerprint and requires recreation.
+  args+=("${CREATE_ARGS[@]}")
   if [[ "$GPU" == true ]]; then
     [[ -d /dev/dri ]] || die "GPU enabled but /dev/dri missing"
     args+=(--device /dev/dri:/dev/dri --group-add keep-groups)
@@ -236,18 +264,18 @@ bootstrap_packages() {
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq bash git curl ca-certificates openssh-client
+  apt-get install -y -qq bash git curl ca-certificates openssh-client "$@"
 elif command -v apk >/dev/null 2>&1; then
-  apk add --no-cache bash git curl ca-certificates openssh-client
+  apk add --no-cache bash git curl ca-certificates openssh-client "$@"
 elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y bash git curl ca-certificates openssh-clients
+  dnf install -y bash git curl ca-certificates openssh-clients "$@"
 elif command -v pacman >/dev/null 2>&1; then
-  pacman -Sy --noconfirm --needed bash git curl ca-certificates openssh
+  pacman -Sy --noconfirm --needed bash git curl ca-certificates openssh "$@"
 else
   echo "Unsupported image package manager; supply bash git curl and ssh manually" >&2
   exit 1
 fi'
-  podman exec --user 0 "$NAME" /bin/sh -c "$bootstrap"
+  podman exec --user 0 "$NAME" /bin/sh -c "$bootstrap" boxkit-bootstrap "${PACKAGES[@]}"
   podman exec --user 0 "$NAME" /bin/sh -c 'uid="$1"; gid="$2"; if ! grep -q "^[^:]*:[^:]*:$gid:" /etc/group; then printf "boxdev:x:%s:\\n" "$gid" >> /etc/group; fi; if ! grep -q "^[^:]*:[^:]*:$uid:" /etc/passwd; then printf "boxdev:x:%s:%s::/home/dev:/bin/bash\\n" "$uid" "$gid" >> /etc/passwd; fi' sh "$(id -u)" "$(id -g)"
 }
 init_inside() {
@@ -276,6 +304,13 @@ export BOX_INITIALIZED=1
 alias ll='ls -alF'
 RC
   fi
+  # Run user-defined first-initialization hooks (not on every shell entry).
+  # Each hook has its own process. Persistent environment belongs in
+  # container creation flags, not "export" in a setup hook.
+  local hook
+  for hook in "${HOOKS[@]}"; do
+    (cd /workspace && bash -c "$hook")
+  done
   if [[ -e "$setup" || -L "$setup" ]]; then
     [[ -f "$setup" ]] || die "invalid box_setup.sh"
     (cd /workspace && bash "$setup")
@@ -316,7 +351,7 @@ main() {
   esac
   ROOT="$(project_dir)"
   HOST_HOME="$HOME"
-  if [[ "$command" == _init ]]; then init_inside; return; fi
+  if [[ "$command" == _init ]]; then load_config; init_inside; return; fi
   load_config
   need podman
   case "$command" in
