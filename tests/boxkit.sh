@@ -115,22 +115,63 @@ export HOME="$tmp/host-home"
 mkdir -p "$HOME"
 unset CONTAINER_ID
 rm -f -- "$tmp/project/.distrobox/initialized"
+# Project setup is optional, runs from the project directory and needs no executable bit.
+cat > "$tmp/project/box_setup.sh" <<'SETUP'
+#!/usr/bin/env bash
+printf '%s\n' "$PWD" >> "$BOX_TEST_SETUP_LOG"
+SETUP
+export BOX_TEST_SETUP_LOG="$tmp/setup-invocations"
 cd "$tmp/project"
 BOX_PROVISIONER=none bash ./box e
 test "$(cat .distrobox/initialized)" = instance-1
 test -f .distrobox/home/.bashrc
+test "$(wc -l < "$BOX_TEST_SETUP_LOG")" -eq 1
+test "$(tail -n 1 "$BOX_TEST_SETUP_LOG")" = "$tmp/project"
 test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 1
 BOX_PROVISIONER=none bash ./box e
 test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 1
+test "$(wc -l < "$BOX_TEST_SETUP_LOG")" -eq 1
 # Recreate changes the container ID and must rerun initialization.
 BOX_PROVISIONER=none bash ./box e -r
 test "$(cat .distrobox/initialized)" = instance-2
+test "$(wc -l < "$BOX_TEST_SETUP_LOG")" -eq 2
 test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 2
 # Reusing a name after external replacement must not reuse the stale marker.
 printf 'external-instance\n' > "$BOX_TEST_CONTAINER_ID_FILE"
 BOX_PROVISIONER=none bash ./box e
 test "$(cat .distrobox/initialized)" = external-instance
+test "$(wc -l < "$BOX_TEST_SETUP_LOG")" -eq 3
 test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 3
+# Failed setup must leave the instance uninitialized and retry on next enter.
+cat > box_setup.sh <<'SETUP'
+#!/usr/bin/env bash
+if [ -f "$BOX_TEST_SETUP_FAIL_FLAG" ]; then exit 27; fi
+printf 'ok\n' >> "$BOX_TEST_SETUP_RETRY_LOG"
+SETUP
+export BOX_TEST_SETUP_FAIL_FLAG="$tmp/setup-fail"
+export BOX_TEST_SETUP_RETRY_LOG="$tmp/setup-retries"
+touch "$BOX_TEST_SETUP_FAIL_FLAG"
+printf 'failed-instance\n' > "$BOX_TEST_CONTAINER_ID_FILE"
+if BOX_PROVISIONER=none bash ./box e; then
+  echo 'FAIL: failing box_setup.sh was accepted' >&2
+  exit 1
+fi
+test "$(cat .distrobox/initialized)" = external-instance
+rm -f "$BOX_TEST_SETUP_FAIL_FLAG"
+BOX_PROVISIONER=none bash ./box e
+test "$(cat .distrobox/initialized)" = failed-instance
+test "$(wc -l < "$BOX_TEST_SETUP_RETRY_LOG")" -eq 1
+# Broken setup symlink must fail rather than silently skip.
+ln -sf "$tmp/missing-setup" box_setup.sh
+printf 'broken-instance\n' > "$BOX_TEST_CONTAINER_ID_FILE"
+if BOX_PROVISIONER=none bash ./box e; then
+  echo 'FAIL: broken setup symlink was accepted' >&2
+  exit 1
+fi
+test "$(cat .distrobox/initialized)" = failed-instance
+rm -f box_setup.sh
+BOX_PROVISIONER=none bash ./box e
+test "$(cat .distrobox/initialized)" = broken-instance
 if bash ./box i; then
   echo 'FAIL: legacy init command still accepted' >&2
   exit 1
