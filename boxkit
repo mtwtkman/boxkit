@@ -184,12 +184,28 @@ cmd="\$1"
 
 shift
 
+function container_id
+{
+  distrobox list | awk -F '|' -v name="${container_name}" '
+    NR > 1 {
+      id = $1; candidate = $2
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", candidate)
+      if (candidate == name) { print id; exit }
+    }'
+}
+
+function current_container_id
+{
+  container_id
+}
+
 function prepare_ssh_agent
 {
   local socket="\${BOX_SSH_AGENT_SOCKET:-\${SSH_AUTH_SOCK:-}}"
   local marker="${box_entrypoint_path}/.distrobox/ssh-agent-source"
   local existing=0
-  distrobox list | grep -F -- "${container_name}" >/dev/null && existing=1
+  [ -n "\$(container_id)" ] && existing=1
   if [ -z "\$socket" ] || [ ! -S "\$socket" ]; then
     echo "Warning: no active host ssh-agent socket; forwarding disabled." >&2
     if [ "\$existing" = 1 ] && [ -f "\$marker" ]; then
@@ -223,7 +239,7 @@ function create_box
 {
   [ "\${CONTAINER_ID}" ] && return
   # Preserve the existing container HOME even when recreating the container.
-  if [ -n "\$(distrobox list | grep -F -- ${container_name})" ]; then
+  if [ -n "\$(container_id)" ]; then
     distrobox assemble rm --file "$distrobox_manifest_path" || return 1
   fi
   distrobox assemble create --file "$distrobox_manifest_path" || return 1
@@ -282,7 +298,8 @@ EOF
 function initialize_box
 {
   local marker="${box_entrypoint_path}/.distrobox/initialized"
-  [ -f "\$marker" ] && return 0
+  [ -n "\${BOX_CONTAINER_INSTANCE:-}" ] || { echo "Missing container instance ID" >&2; return 1; }
+  [ -f "\$marker" ] && [ "\$(cat "\$marker")" = "\$BOX_CONTAINER_INSTANCE" ] && return 0
   mkdir -p -- "\${XDG_CONFIG_HOME:-\$HOME/.config}" || return 1
 
   # Provisioning is explicit; never execute arbitrary post-init hooks.
@@ -322,7 +339,7 @@ function initialize_box
 
   echo "generated ${home_name}/.bashrc"
   mkdir -p -- "${box_entrypoint_path}/.distrobox" || return 1
-  touch -- "\$marker" || return 1
+  printf '%s\\n' "\$BOX_CONTAINER_INSTANCE" > "\$marker" || return 1
 
   # Arbitrary post-initialization shell execution is intentionally disabled.
 }
@@ -330,12 +347,33 @@ function initialize_box
 case "\${cmd}" in
   enter|e)
     [ -n "\${CONTAINER_ID:-}" ] && echo "Already in distrobox container, so do nothing" && exit 0
+    if [ "\$#" -gt 1 ] || { [ "\$#" -eq 1 ] && [ "\$1" != "-r" ]; }; then
+      echo "Usage: ./box enter [-r]" >&2
+      exit 2
+    fi
+    recreate=0
+    [ "\${1:-}" = "-r" ] && recreate=1
     marker="${box_entrypoint_path}/.distrobox/initialized"
-    if [ ! -f "\$marker" ]; then
+    id="\$(current_container_id)"
+    if [ "\$recreate" -eq 1 ]; then
+      prepare_ssh_agent || exit 1
+      create_box || exit 1
+      id="\$(current_container_id)"
+    elif [ -z "\$id" ]; then
+      prepare_ssh_agent || exit 1
+      create_box || exit 1
+      id="\$(current_container_id)"
+    else
+      prepare_ssh_agent || exit 1
+    fi
+    if [ -z "\$id" ]; then
+      echo "Container ${container_name} was not found after creation." >&2
+      exit 1
+    fi
+    if [ ! -f "\$marker" ] || [ "\$(cat "\$marker")" != "\$id" ]; then
       provisioner="\${BOX_PROVISIONER:-}"
       case "\$provisioner" in
-        mi) ;;
-        none) provisioner="" ;;
+        mi|none) ;;
         "")
           if [ ! -t 0 ]; then
             echo "First enter requires terminal confirmation or BOX_PROVISIONER=mi|none." >&2
@@ -345,22 +383,14 @@ case "\${cmd}" in
           IFS= read -r answer || exit 1
           case "\$answer" in
             y|Y) provisioner=mi ;;
-            *) provisioner="" ;;
+            *) provisioner=none ;;
           esac
           ;;
         *) echo "Unsupported BOX_PROVISIONER: \$provisioner" >&2; exit 1 ;;
       esac
-    fi
-    prepare_ssh_agent || exit 1
-    if [ -z "\$(distrobox list | grep -F -- ${container_name})" ]; then
-      create_box || exit 1
-    fi
-    if [ "\$#" = 1 ] && [ "\$1" = "-r" ]; then
-      create_box || exit 1
-    fi
-    if [ ! -f "\$marker" ]; then
-      distrobox enter --no-workdir "${container_name}" -- /usr/bin/env "BOX_PROVISIONER=\$provisioner" /bin/bash "${box_script_path}" _init || exit 1
-      if [ ! -f "\$marker" ]; then
+      # Only the internal init process writes the marker, after successful setup.
+      distrobox enter --no-workdir "${container_name}" -- /usr/bin/env "BOX_PROVISIONER=\$provisioner" "BOX_CONTAINER_INSTANCE=\$id" "MI_REPO_PATH=\${MI_REPO_PATH:-}" "BOX_MI_SETUP_URL=\${BOX_MI_SETUP_URL:-}" /bin/bash "${box_script_path}" _init || exit 1
+      if [ ! -f "\$marker" ] || [ "\$(cat "\$marker")" != "\$id" ]; then
         echo "Container initialization did not complete; retry ./box enter." >&2
         exit 1
       fi
