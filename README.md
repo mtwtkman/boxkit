@@ -33,12 +33,13 @@ Do not invoke `./box init` to provision an existing container. Provisioning runs
 [container]
 name = example-dev
 engine = podman
-image = docker.io/library/debian:13
+image = docker.io/library/archlinux:latest
 home = .boxkit/home
 
 [integration]
 ssh_agent = true
 wayland = true
+dbus_session = true
 gpu = false
 
 [network]
@@ -52,17 +53,18 @@ mode = private
 
 Repeated `publish` and `mount` entries are accepted. Network publishes are bound to host loopback (127.0.0.1). `network.mode = none` disables the network and disallows publishes. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Settings are parsed as data and never sourced as shell.
 
-The default image is Debian 13. The first entry installs basic development prerequisites (bash, git, curl, SSH client and certificate bundle) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
+The default image is Arch Linux (`docker.io/library/archlinux:latest`). The first entry installs basic development prerequisites (bash, git, curl, SSH client and certificate bundle) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
 
 ## Host integration
 
 - **SSH agent**: `SSH_AUTH_SOCK` is detected on the host, or override with `BOX_SSH_AGENT_SOCKET`. No private SSH key directories are mounted. Processes inside the container can request signatures from the agent, so only use this with trusted projects.
 - **Wayland**: requires an available host `WAYLAND_DISPLAY` socket; basic clipboard operations use Wayland. D-Bus and X11 are not automatically shared. Set `wayland = false` for headless sessions. Wayland grants the GUI program compositor-provided privileges.
+- **Session D-Bus**: `dbus_session = true` (default for newly initialized projects) detects the host session bus at `$XDG_RUNTIME_DIR/bus`, preferring a valid explicit `unix:path=` address, and bind-mounts it as `/home/dev/.boxkit-runtime/bus`. The container receives `DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus`, independent of host paths, and `XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime`. If no session bus is available, boxkit warns and leaves the integration disabled. This grants container processes access to the host user session bus, including any services reachable through it. **Set `dbus_session = false` for untrusted projects or when session bus access is unnecessary.** Existing `boxkit.ini` files without this setting use the same default, so explicitly disable it if required.
 - **GPU**: optional `gpu = true` adds `/dev/dri` and keeps supplementary groups. The container still needs suitable userspace drivers.
 - **Volumes**: explicit read-only/read-write bind mounts. GPU and GUI are independent options.
 - **Port publishing**: `publish = host-port:container-port`, exposed only via host loopback.
 
-Boxkit records a fingerprint including the configuration and socket inode identities. If the agent or Wayland socket is replaced, `enter` refuses the old mount and tells you to run `./box enter -r`. Recreating a running container is never automatic. A missing SSH agent is allowed with a warning, but changing its availability requires explicit recreation.
+Boxkit records a fingerprint including the configuration and SSH-agent, Wayland, and D-Bus socket inode identities. If the agent, Wayland or D-Bus socket is replaced, `enter` refuses the old mount and tells you to run `./box enter -r`. Recreating a running container is never automatic. A missing SSH agent or D-Bus session socket is allowed with a warning, but changing its availability requires explicit recreation. This is particularly relevant after a host logout/login or session bus restart.
 
 ## Initial provisioning
 
@@ -90,3 +92,7 @@ bash tests/boxkit.sh
 ```
 
 The Bash tests use a Podman CLI mock. Real rootless Podman, GUI, socket renewal, GPU device access and networking require separate host integration testing.
+
+## Updating existing projects
+
+A project created with an older `./box` keeps its old embedded code. To apply this update, stop the container, back up the existing `./box`, and replace it with the latest `boxkit` script, then change the `image` field in `boxkit.ini` if you want Arch Linux. The default image only applies to newly generated INI files. Configuration or socket mount changes require `./box enter -r` to recreate the container; this preserves `.boxkit/home` but not image-layer changes. If you require host D-Bus, set `dbus_session = true` under `[integration]`; to keep isolation, set it to `false`.
