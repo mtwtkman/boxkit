@@ -310,6 +310,7 @@ function initialize_box
         return 1
       fi
       ;;
+    none) ;;
     mi)
       if [ -n "\${MI_REPO_PATH:-}" ]; then
         [ -f "\${MI_REPO_PATH}/mi" ] || { echo "MI_REPO_PATH must reference a Mi checkout" >&2; return 1; }
