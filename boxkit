@@ -171,7 +171,7 @@ function show_box_script_usage
   echo ""
   echo -e "\\tinit | i [-f]"
   echo -e "\\t\\tInitialize your development container. You should run command in your development container at first."
-  echo -e "\\t\\tThis command will deploy .bashrc"
+  echo -e "\\t\\tThis command will deploy .bashrc and optionally provision Mi."
   echo -e "\\\t\\tYou can pass -f option to force initialize again."
   echo ""
   echo -e "\\tstop | s"
@@ -283,11 +283,38 @@ function initialize_box
   [ "\${BOX_INITIALIZED}" ] && echo "Already initialized bye." && exit 0
   [ ! -d "\${XDG_CONFIG_HOME}" ] && mkdir "\${XDG_CONFIG_HOME}"
 
-  # Host credentials and dotfiles are not mounted into container HOME by boxkit.
-  if [ -n "\${MI_REPO_PATH:-}" ]; then
-    [ -f "\${MI_REPO_PATH}/mi" ] || { echo "MI_REPO_PATH must reference a Mi checkout" >&2; return 1; }
-    MI_PROFILE=container bash "\${MI_REPO_PATH}/mi" deploy || return 1
-  fi
+  # Provisioning is explicit; never execute arbitrary post-init hooks.
+  case "\${BOX_PROVISIONER:-}" in
+    "")
+      if [ -n "\${MI_REPO_PATH:-}" ]; then
+        echo "MI_REPO_PATH requires BOX_PROVISIONER=mi" >&2
+        return 1
+      fi
+      ;;
+    mi)
+      if [ -n "\${MI_REPO_PATH:-}" ]; then
+        [ -f "\${MI_REPO_PATH}/mi" ] || { echo "MI_REPO_PATH must reference a Mi checkout" >&2; return 1; }
+        MI_PROFILE=container bash "\${MI_REPO_PATH}/mi" deploy || return 1
+      else
+        command -v curl >/dev/null 2>&1 || { echo "Mi provisioning requires curl" >&2; return 1; }
+        local setup_file
+        setup_file="\$(mktemp)" || return 1
+        if ! curl -fsSL "\${BOX_MI_SETUP_URL:-https://raw.githubusercontent.com/mtwtkman/mi/main/setup}" -o "\$setup_file"; then
+          rm -f -- "\$setup_file"
+          echo "Unable to download Mi setup" >&2
+          return 1
+        fi
+        MI_PROFILE=container bash "\$setup_file"
+        local result=\$?
+        rm -f -- "\$setup_file"
+        [ "\$result" -eq 0 ] || return "\$result"
+      fi
+      ;;
+    *)
+      echo "Unsupported BOX_PROVISIONER: \${BOX_PROVISIONER}" >&2
+      return 1
+      ;;
+  esac
 
   generate_bashrc
 
