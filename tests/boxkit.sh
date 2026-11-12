@@ -46,4 +46,30 @@ if BOX_ENTRYPOINT_NAME="$tmp/relative-project" BOX_SSH_AGENT_SOCKET="relative.so
   echo 'FAIL: relative agent socket accepted' >&2
   exit 1
 fi
+# Verify explicit Mi provisioning with a local checkout.
+mkdir -p "$tmp/mock-mi"
+cat > "$tmp/mock-mi/mi" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s:%s\n' "${MI_PROFILE:-}" "$*" > "$BOX_TEST_MI_LOG"
+MOCK
+chmod +x "$tmp/mock-mi/mi"
+export BOX_TEST_MI_LOG="$tmp/mi-invocation"
+export CONTAINER_ID=boxkit-ci
+export XDG_CONFIG_HOME="$tmp/project/.distrobox/home/.config"
+mkdir -p "$XDG_CONFIG_HOME"
+cd "$tmp/project"
+BOX_PROVISIONER=mi MI_REPO_PATH="$tmp/mock-mi" bash ./box init
+grep -qx 'container:deploy' "$BOX_TEST_MI_LOG"
+test -f .distrobox/home/.bashrc
+
+# Unsupported provisioners must fail without completing initialization.
+export XDG_CONFIG_HOME="$tmp/invalid-project/.config"
+mkdir -p "$XDG_CONFIG_HOME" "$tmp/invalid-project"
+cd "$tmp/invalid-project"
+BOX_ENTRYPOINT_NAME="$tmp/invalid-project" bash "$repo/boxkit"
+if BOX_PROVISIONER=unknown bash ./box init; then
+  echo 'FAIL: unknown provisioner accepted' >&2
+  exit 1
+fi
+test ! -e .distrobox/home/.bashrc
 echo 'Boxkit regression tests passed'
