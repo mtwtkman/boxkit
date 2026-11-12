@@ -67,7 +67,7 @@ export XDG_CONFIG_HOME="$tmp/invalid-project/.config"
 mkdir -p "$XDG_CONFIG_HOME" "$tmp/invalid-project"
 cd "$tmp/invalid-project"
 BOX_ENTRYPOINT_NAME="$tmp/invalid-project" bash "$repo/boxkit"
-if BOX_PROVISIONER=unknown bash ./box _init; then
+if BOX_CONTAINER_INSTANCE=invalid-test BOX_PROVISIONER=unknown bash ./box _init; then
   echo 'FAIL: unknown provisioner accepted' >&2
   exit 1
 fi
