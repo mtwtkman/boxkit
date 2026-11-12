@@ -1,137 +1,92 @@
 # Boxkit
-```
-boxkit is a helper tool for building development environment by using distrobox.
 
-USAGE:
-	[OPTIONS] ./boxkit
+A small, single-file Bash development-container manager backed by **rootless Podman**. Boxkit invokes the container engine CLI directly and does not require Distrobox. `engine = podman` is explicitly written into the configuration; additional engines may be implemented later.
 
-OPTIONS:
-	DISTROBOX_CONTAINER_NAME
-		A name of your development container created by distrobox.
-		If it wan't set then boxkit prompt will ask you it.
+## Quick start
 
-	BOX_ENTRYPOINT_NAME
-		The entrypoint of result objects created by boxkit.
-		This value is regarded as relative path under from a project root.
-		default: <Project root path>
+Download the script to a local file (the generator self-copies, so **`curl | bash` is not supported**):
 
-	DISTROBOX_HOME_NAME
-		A name of custom home directory name for your development container.
-		default: ${BOX_ENTRYPOINT_NAME}/.distrobox/home
-
-	BOX_SCRIPT_NAME
-		The script name of the thin wrapper for distrobox.
-		default: ${BOX_ENTRYPOINT_NAME}/box
-
-	DISTROBOX_IMAGE_NAME
-		What image for creating your development container image.
-		default: Up to your distrobox config
-
-```
-
-# Quick start
-1. Run `curl https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit | bash -s`
-1. Run `./box e`
-1. On first `./box e`, confirm whether to provision Mi; initialization then runs automatically before the interactive shell starts.
-1. On subsequent `./box e` runs, initialization is skipped.
-
-## Distrobox and Mi integration
-
-Boxkit creates a project-local container HOME. It does not automatically link
-host SSH credentials or Git/Neovim configuration into that HOME.
-
-Mi provisioning is optional. On first `./box enter`, Boxkit prompts whether to use Mi. Answer `y` to provision Mi or `N` to skip. To avoid the prompt in automation, specify the choice explicitly:
-
-```bash
-BOX_PROVISIONER=mi ./box enter
-# or
-BOX_PROVISIONER=none ./box enter
-```
-
-This downloads the Mi setup script and runs it with `MI_PROFILE=container`,
-deploying Git and OpenCode configuration by default. It requires `curl` and
-`git` in the container, and a Mi version that supports container setup.
-
-For an existing local checkout accessible at the same path inside the container instead of downloading the setup script:
-
-```bash
-BOX_PROVISIONER=mi MI_REPO_PATH=/path/to/mi ./box enter
-```
-
-To review and pin a particular setup script, set `BOX_MI_SETUP_URL` to a
-trusted immutable URL. Do not point it at an unreviewed script. With no `BOX_PROVISIONER`, the first interactive enter asks for confirmation.
-A successful initialization records the container instance ID in `.distrobox/initialized` in the project directory; later entries skip it only while the container ID matches. Recreating or externally replacing the container triggers initialization again. Failed initialization leaves it unmarked so the next enter retries. The old `./box init` command is no longer supported. Existing installations created with an older Boxkit version do not have the marker and will initialize once when migrated.
-Install `fzf` and `ripgrep` using the container package manager; they are
-also listed in the generated manifest.
-
-**Safety:** Re-running the Boxkit generator refuses to overwrite existing
-manifest/wrapper files. The container HOME is not removed by the generator or
-container recreation. Only a trusted project-local `box_setup.sh` is executed;
-there is no remote post-hook execution. Distrobox is host-integrated, not
-a strict security sandbox. Review mounts and credentials separately.
-
-Run regression tests with `bash tests/boxkit.sh`.
-
-## Project-local initialization: `box_setup.sh`
-
-Place an optional `box_setup.sh` next to the generated `./box` script.
-On the first `./box enter` for a container instance, Boxkit initializes Mi
-(if selected), generates the container shell configuration, and then runs
-`bash ./box_setup.sh` **inside the container** with the script's directory
-as the working directory. The script does not need to be executable.
-
-```bash
-# ./box_setup.sh
-#!/usr/bin/env bash
-set -euo pipefail
-echo "Setting up this project"
-```
-
-If the file is absent, setup is skipped. If it fails, initialization is not
-marked complete; the next `./box enter` retries the initialization, including
-the script. It also runs again when the container is recreated or replaced,
-but not on ordinary subsequent entries to the same initialized container.
-Ensure the script is safe to retry and use only trusted project files.
-Boxkit runs it as a subprocess rather than sourcing it, so variables and
-functions defined in the script do not persist in the Boxkit shell.
-
-The legacy `BOX_INIT_POST_HOOK` syntax and remote/local command prefixes
-have been removed. The single-file `curl | bash` generator and generated
-heredoc remain unchanged.
-
-## Optional SSH agent forwarding
-
-Boxkit can expose a host-managed SSH agent to disposable containers without
-copying private keys or linking the host `.ssh` directory. This is opt-in.
-
-On the host, start an agent at a **stable absolute socket path** (example):
-
-```bash
-mkdir -p "$HOME/.ssh"
-eval "$(ssh-agent -a "$HOME/.ssh/boxkit-agent.sock" -s)"
-ssh-add "$HOME/.ssh/id_ed25519"
-```
-
-By default, `./box enter` detects the host `SSH_AUTH_SOCK` when it creates a container. No explicit Boxkit setting is required. For a dedicated stable socket, set `SSH_AUTH_SOCK` on the host before entering:
-
-```bash
-export SSH_AUTH_SOCK="$HOME/.ssh/boxkit-agent.sock"
+```sh
+curl -fsSL https://raw.githubusercontent.com/mtwtkman/boxkit/main/boxkit -o /tmp/boxkit
+bash /tmp/boxkit init
 ./box enter
-ssh-add -l
 ```
 
-On first `./box enter`, Boxkit updates the manifest with a bind mount from the host agent socket to
-`/run/boxkit-ssh-agent.sock` and sets the container's `SSH_AUTH_SOCK` to
-that path. The socket is detected at **container creation time**. When no agent is available, Boxkit warns and proceeds without forwarding. A new container can reuse the same
-host agent socket across projects, provided each project's manifest opts in.
+`boxkit init` writes **only `boxkit.ini` and `./box`**. It also creates the private state and HOME directories. It does not generate a Containerfile, install Podman, or overwrite existing files. The executable `./box` is a copy of the same script (no nested generated heredoc, compilation, or runtime download). Podman is required when running the container, not for scaffolding.
 
-**Lifecycle:** If the host agent is restarted and its socket is replaced,
-a running container's bind mount can point to the old socket inode. Recreate
-the container to refresh the mount. Use a login-session service to maintain
-the stable socket path; the example above is for manual setup only. For an existing container without forwarding, recreate it explicitly to apply the updated mount configuration.
+## CLI
 
-**Security:** Processes in a container with socket access can request SSH
-signatures using loaded host keys. Agent forwarding does not isolate
-authentication authority. Never mount the private key directory. Restrict
-forwarding to trusted containers and consider `ssh-add -c` confirmation or
-time-limited keys.
+| Command | Behavior |
+| --- | --- |
+| `./box enter` or `./box e` | Create/start and enter container; initialize once per instance |
+| `./box enter -r` | Explicitly recreate; preserves independent HOME |
+| `./box exec COMMAND...` | Run a command inside a running container |
+| `./box stop` | Stop container |
+| `./box rm` | Remove container (does not delete HOME) |
+| `./box list` | List Boxkit-managed containers |
+
+Do not invoke `./box init` to provision an existing container. Provisioning runs automatically on first enter.
+
+## Configuration
+
+```ini
+[container]
+name = example-dev
+engine = podman
+image = docker.io/library/debian:13
+home = .boxkit/home
+
+[integration]
+ssh_agent = true
+wayland = true
+gpu = false
+
+[network]
+mode = private
+# publish = 8080:8080
+
+[mounts]
+# mount = ./data|/data|rw
+# mount = ~/.config/nvim|/home/dev/.config/nvim|ro
+```
+
+Repeated `publish` and `mount` entries are accepted. Network publishes are bound to host loopback (127.0.0.1). `network.mode = none` disables the network and disallows publishes. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Settings are parsed as data and never sourced as shell.
+
+The default image is Debian 13. The first entry installs basic development prerequisites (bash, git, curl, SSH client and certificate bundle) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
+
+## Host integration
+
+- **SSH agent**: `SSH_AUTH_SOCK` is detected on the host, or override with `BOX_SSH_AGENT_SOCKET`. No private SSH key directories are mounted. Processes inside the container can request signatures from the agent, so only use this with trusted projects.
+- **Wayland**: requires an available host `WAYLAND_DISPLAY` socket; basic clipboard operations use Wayland. D-Bus and X11 are not automatically shared. Set `wayland = false` for headless sessions. Wayland grants the GUI program compositor-provided privileges.
+- **GPU**: optional `gpu = true` adds `/dev/dri` and keeps supplementary groups. The container still needs suitable userspace drivers.
+- **Volumes**: explicit read-only/read-write bind mounts. GPU and GUI are independent options.
+- **Port publishing**: `publish = host-port:container-port`, exposed only via host loopback.
+
+Boxkit records a fingerprint including the configuration and socket inode identities. If the agent or Wayland socket is replaced, `enter` refuses the old mount and tells you to run `./box enter -r`. Recreating a running container is never automatic. A missing SSH agent is allowed with a warning, but changing its availability requires explicit recreation.
+
+## Initial provisioning
+
+On first entry, Boxkit prompts for Mi; specify `BOX_PROVISIONER=mi` or `BOX_PROVISIONER=none` in noninteractive use. Mi uses `MI_PROFILE=container`. A trusted, project-local `box_setup.sh` runs inside the container, after Mi, as a Bash subprocess from `/workspace`. It does not have to be executable. Set `MI_REPO_PATH` to a checkout path **visible inside the container**, e.g. `/workspace/mi`. `BOX_MI_SETUP_URL` can override the setup script URL.
+
+Successful setup is tracked by the actual container ID in `.boxkit/state/initialized`. Failed setup is retried on the next entry. Container recreation reruns setup; write idempotent setup scripts. HOME survives recreation, but changes made only in the container's writable layer do not.
+
+## Migrating from Distrobox
+
+**No in-place migration is performed.** Existing `distrobox.ini`, `.distrobox/home` and Distrobox containers remain untouched.
+
+1. Back up your old HOME and check which configuration and files you want to preserve.
+2. Create a new `boxkit.ini` and `./box` using `boxkit init` in a clean project directory, or carefully copy the generated files into the existing project.
+3. If migrating the old HOME, copy files into `.boxkit/home` while the old container is stopped; review ownership and SSH/secret files.
+4. Confirm Wayland, Git, agent forwarding and project setup with `BOX_PROVISIONER=none ./box enter` first.
+5. Delete the old Distrobox container yourself only after verifying the new one.
+
+Do not reuse the same container name with a different engine without reviewing conflicts. Container changes requiring recreation use `./box enter -r`, which preserves `.boxkit/home`.
+
+## Testing
+
+```sh
+bash -n boxkit
+bash tests/boxkit.sh
+```
+
+The Bash tests use a Podman CLI mock. Real rootless Podman, GUI, socket renewal, GPU device access and networking require separate host integration testing.
