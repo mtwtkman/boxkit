@@ -188,7 +188,7 @@ function container_id
 {
   distrobox list | awk -F '|' -v name="${container_name}" '
     NR > 1 {
-      id = $1; candidate = $2
+      id = \$1; candidate = \$2
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", candidate)
       if (candidate == name) { print id; exit }
