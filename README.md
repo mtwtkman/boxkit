@@ -71,6 +71,12 @@ Repeated `publish` and `mount` entries are accepted. Network publishes are bound
 
 The default image is Arch Linux (`docker.io/library/archlinux:latest`). The first entry installs basic development prerequisites (bash, git, curl, SSH client and certificate bundle) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
 
+## Host session D-Bus for Podman
+
+Rootless Podman/crun may contact the host's systemd user manager while starting a container. An inherited stale `DBUS_SESSION_BUS_ADDRESS` (for example a temporary `/tmp/dbus-...` address) may cause `crun: sd-bus call: Process org.freedesktop.systemd1 exited with status 1`. Boxkit now normalizes **the host-side environment of its own process and Podman descendants** to `unix:path=$XDG_RUNTIME_DIR/bus` when that Unix socket exists. It does not alter the parent shell environment or require changes to the generated `./box` script by hand.
+
+This fix is separate from `dbus_session = true`, which controls access to the host session bus **inside** a container. If `$XDG_RUNTIME_DIR/bus` is missing, Boxkit leaves the inherited address unchanged; inspect `systemctl --user is-system-running`, `XDG_RUNTIME_DIR` and the session bus state if Podman still fails.
+
 ## Host integration
 
 - **SSH agent**: `SSH_AUTH_SOCK` is detected on the host, or override with `BOX_SSH_AGENT_SOCKET`. No private SSH key directories are mounted. Processes inside the container can request signatures from the agent, so only use this with trusted projects.

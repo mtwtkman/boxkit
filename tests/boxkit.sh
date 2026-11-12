@@ -47,12 +47,13 @@ done
 [[ -S "$tmp/runtime/bus" ]]
 export XDG_RUNTIME_DIR="$tmp/runtime"
 # Host address is intentionally different: container must never inherit it.
-export DBUS_SESSION_BUS_ADDRESS="unix:path=$tmp/runtime/bus"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$tmp/stale-session-bus"
 
 cat > "$tmp/bin/podman" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$BOX_TEST_LOG"
+printf '%s\n' "${DBUS_SESSION_BUS_ADDRESS:-unset}" >> "$BOX_TEST_HOST_DBUS_LOG"
 case "${1:-}" in
   create)
     printf 'container-instance-%s\n' "$(date +%s%N)" > "$BOX_TEST_ID"
@@ -82,11 +83,15 @@ esac
 MOCK
 chmod +x "$tmp/bin/podman"
 export BOX_TEST_LOG="$tmp/podman-log"
+export BOX_TEST_HOST_DBUS_LOG="$tmp/podman-host-dbus-log"
 export BOX_TEST_ID="$tmp/container-id"
 export BOX_TEST_STATUS="$tmp/container-status"
 export BOX_PROVISIONER=none
 ./box enter
 [[ -f .boxkit/state/initialized ]]
+# The Podman CLI must receive the canonical host session bus, not the stale value.
+grep -Fxq "unix:path=$tmp/runtime/bus" "$BOX_TEST_HOST_DBUS_LOG"
+! grep -Fq "unix:path=$tmp/stale-session-bus" "$BOX_TEST_HOST_DBUS_LOG"
 grep -q 'create --name' "$BOX_TEST_LOG"
 grep -Fq -- '--hostname=haskell-dev' "$BOX_TEST_LOG"
 grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
