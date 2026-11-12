@@ -90,8 +90,8 @@ case "${1:-}" in
         count=0
         [ -f "$BOX_TEST_COUNTER" ] && count="$(cat "$BOX_TEST_COUNTER")"
         count=$((count + 1))
-        printf '%s\n' "\$count" > "$BOX_TEST_COUNTER"
-        printf 'instance-%s\n' "\$count" > "$BOX_TEST_CONTAINER_ID_FILE"
+        printf '%s\n' "$count" > "$BOX_TEST_COUNTER"
+        printf 'instance-%s\n' "$count" > "$BOX_TEST_CONTAINER_ID_FILE"
         ;;
     esac
     ;;
