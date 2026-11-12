@@ -138,6 +138,18 @@ validate_mount() {
   [[ -e "$source" ]] || die "mount source does not exist: $source"
   MOUNT_ARGS+=(--mount "type=bind,src=$source,dst=$destination,$([ "$mode" = ro ] && printf readonly || printf rw)")
 }
+normalize_host_session_bus() {
+  # Rootless Podman/crun may use sd-bus to reach the host's systemd user
+  # manager. A stale or noncanonical address inherited from the login shell
+  # can make container start fail before any container-side D-Bus configuration
+  # takes effect. Fix only this script's environment and child processes.
+  local runtime_dir="${XDG_RUNTIME_DIR:-}" canonical
+  [[ -n "$runtime_dir" && -S "$runtime_dir/bus" ]] || return 0
+  canonical="unix:path=$runtime_dir/bus"
+  if [[ "${DBUS_SESSION_BUS_ADDRESS:-}" != "$canonical" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="$canonical"
+  fi
+}
 detect_integrations() {
   local socket='' wd='' rt=''
   AGENT_SOCKET='' WAYLAND_SOCKET='' DBUS_SOCKET=''
@@ -352,6 +364,7 @@ main() {
   ROOT="$(project_dir)"
   HOST_HOME="$HOME"
   if [[ "$command" == _init ]]; then load_config; init_inside; return; fi
+  normalize_host_session_bus
   load_config
   need podman
   case "$command" in
