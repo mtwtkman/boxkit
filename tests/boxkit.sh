@@ -11,7 +11,9 @@ cd "$tmp/project"
 bash "$repo/boxkit" init
 [[ -f boxkit.ini && -x box ]]
 bash -n box
-grep -q '^engine = podman
+grep -q '^engine = podman$' boxkit.ini
+grep -q '^image = docker.io/library/archlinux:latest$' boxkit.ini
+grep -q '^dbus_session = true$' boxkit.ini
 [[ ! -e Containerfile ]]
 if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
 mkdir -p .boxkit/home
