@@ -95,7 +95,7 @@ resolve_source() {
   local x="$1"
   case "$x" in
     '~') x="$HOST_HOME";;
-    '~/'*) x="$HOST_HOME/${x#~/}";;
+    '~/'*) x="$HOST_HOME/${x:2}";;
     /*) ;;
     *) x="$ROOT/$x";;
   esac
