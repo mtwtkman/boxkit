@@ -184,6 +184,41 @@ cmd="\$1"
 
 shift
 
+function prepare_ssh_agent
+{
+  local socket="\${BOX_SSH_AGENT_SOCKET:-\${SSH_AUTH_SOCK:-}}"
+  local marker="\${box_entrypoint_path}/.distrobox/ssh-agent-source"
+  local existing=0
+  distrobox list | grep -F -- "\${container_name}" >/dev/null && existing=1
+  if [ -z "\$socket" ] || [ ! -S "\$socket" ]; then
+    echo "Warning: no active host ssh-agent socket; forwarding disabled." >&2
+    if [ "\$existing" = 1 ] && [ -f "\$marker" ]; then
+      echo "Existing container was configured for SSH forwarding; check agent availability." >&2
+    fi
+    return 0
+  fi
+  case "\$socket" in
+    /*) ;;
+    *) echo "SSH_AUTH_SOCK must be an absolute path" >&2; return 1 ;;
+  esac
+  case "\$socket" in
+    *[[:space:]]*|*:*|*\\*|*\"*) echo "Unsupported SSH_AUTH_SOCK path" >&2; return 1 ;;
+  esac
+  if [ "\$existing" = 1 ]; then
+    if [ -f "\$marker" ] && [ "\$(cat "\$marker")" != "\$socket" ]; then
+      echo "Warning: agent socket changed; recreate container to refresh forwarding." >&2
+    elif [ ! -f "\$marker" ]; then
+      echo "Warning: existing container may lack SSH forwarding; recreate to enable." >&2
+    fi
+    return 0
+  fi
+  mkdir -p "\${box_entrypoint_path}/.distrobox"
+  # Update only the forwarding entry in the generated manifest.
+  sed -i '/^additional_flags="--volume .*:\/run\/boxkit-ssh-agent.sock /d' "\${distrobox_manifest_path}"
+  printf 'additional_flags="--volume %s:/run/boxkit-ssh-agent.sock --env SSH_AUTH_SOCK=/run/boxkit-ssh-agent.sock"\n' "\$socket" >> "\${distrobox_manifest_path}"
+  printf '%s\n' "\$socket" > "\$marker"
+}
+
 function create_box
 {
   [ "\${CONTAINER_ID}" ] && return
@@ -264,6 +299,7 @@ function initialize_box
 case "\${cmd}" in
   enter|e)
     [ "\${CONTAINER_ID}" ] && echo "Already in distrobox container, so do nothing" && exit 0
+    prepare_ssh_agent || exit 1
     [ ! "\$(distrobox list | grep -F -- ${container_name})" ] && create_box
     [ "\$#" = 1 ] && [ "\$1" = "-r" ] && create_box
     host_dir="\$(pwd | sed 's/\/run\/host//g')"
