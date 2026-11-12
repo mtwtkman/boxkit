@@ -27,15 +27,6 @@ OPTIONS:
 		What image for creating your development container image.
 		default: Up to your distrobox config
 
-	BOX_INIT_POST_HOOK
-		Colon separated commands after box initialization.
-		You can pass any commands like BOX_INIT_POST_HOOK='ls;pwd;'.
-		This options' value elements are permitted of combination of '<command>' and '<prefix>:<value>'.
-		There are two types <prefix> , 'r' or 'l'. Detail is below.
-			- 'r' prefix presents 'remote'. r:<url> retrieve contents using curl from <url> and applies as is as command.
-			- 'l' prefix presents 'local'. l:<path> retrieve contents from local file <path> and applies as is as command.
-			For instance, BOX_INIT_POST_HOOK='ls;pwd;r:https://something/scaffolding/ghcup;l:../setup-mise' means 'After box initialization, I do 'ls', 'pwd', 'Retrieve commands from https://something/scaffolding/ghcup', 'Retrieve from ./setup-mise'.
-		default: Do nothing
 ```
 
 # Quick start
@@ -75,11 +66,38 @@ also listed in the generated manifest.
 
 **Safety:** Re-running the Boxkit generator refuses to overwrite existing
 manifest/wrapper files. The container HOME is not removed by the generator or
-container recreation. `BOX_INIT_POST_HOOK` is disabled because its legacy
-implementation executes fetched shell code. Distrobox is host-integrated, not
+container recreation. Only a trusted project-local `box_setup.sh` is executed;
+there is no remote post-hook execution. Distrobox is host-integrated, not
 a strict security sandbox. Review mounts and credentials separately.
 
 Run regression tests with `bash tests/boxkit.sh`.
+
+## Project-local initialization: `box_setup.sh`
+
+Place an optional `box_setup.sh` next to the generated `./box` script.
+On the first `./box enter` for a container instance, Boxkit initializes Mi
+(if selected), generates the container shell configuration, and then runs
+`bash ./box_setup.sh` **inside the container** with the script's directory
+as the working directory. The script does not need to be executable.
+
+```bash
+# ./box_setup.sh
+#!/usr/bin/env bash
+set -euo pipefail
+echo "Setting up this project"
+```
+
+If the file is absent, setup is skipped. If it fails, initialization is not
+marked complete; the next `./box enter` retries the initialization, including
+the script. It also runs again when the container is recreated or replaced,
+but not on ordinary subsequent entries to the same initialized container.
+Ensure the script is safe to retry and use only trusted project files.
+Boxkit runs it as a subprocess rather than sourcing it, so variables and
+functions defined in the script do not persist in the Boxkit shell.
+
+The legacy `BOX_INIT_POST_HOOK` syntax and remote/local command prefixes
+have been removed. The single-file `curl | bash` generator and generated
+heredoc remain unchanged.
 
 ## Optional SSH agent forwarding
 
