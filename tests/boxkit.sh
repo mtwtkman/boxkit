@@ -16,6 +16,8 @@ cd "$tmp/project"
 bash "$repo/boxkit"
 test -f distrobox.ini
 test -x box
+bash -n box
+head -n 1 box | grep -qx '#!/usr/bin/env bash'
 mkdir -p .distrobox/home
 printf 'keep me\n' > .distrobox/home/preserved
 if bash "$repo/boxkit"; then
@@ -37,6 +39,7 @@ test -S "$tmp/agent.sock"
 export BOX_ENTRYPOINT_NAME="$tmp/agent-project"
 mkdir -p "$BOX_ENTRYPOINT_NAME"
 BOX_SSH_AGENT_SOCKET="$tmp/agent.sock" bash "$repo/boxkit"
+bash -n "$BOX_ENTRYPOINT_NAME/box"
 grep -F -- "additional_flags=\"--volume $tmp/agent.sock:/run/boxkit-ssh-agent.sock --env SSH_AUTH_SOCK=/run/boxkit-ssh-agent.sock\"" "$BOX_ENTRYPOINT_NAME/distrobox.ini"
 if BOX_ENTRYPOINT_NAME="$tmp/missing-project" BOX_SSH_AGENT_SOCKET="$tmp/missing.sock" bash "$repo/boxkit"; then
   echo 'FAIL: nonexistent agent socket accepted' >&2
@@ -136,12 +139,24 @@ BOX_PROVISIONER=none bash ./box e -r
 test "$(cat .distrobox/initialized)" = instance-2
 test "$(wc -l < "$BOX_TEST_SETUP_LOG")" -eq 2
 test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 2
+# Recreating with a changed SSH agent must refresh the manifest mount.
+# A regular entry must not rewrite the mount of an existing container.
+cp "$tmp/project/distrobox.ini" "$tmp/manifest-before-agent"
+BOX_PROVISIONER=none BOX_SSH_AGENT_SOCKET="$tmp/agent.sock" bash ./box e
+cmp "$tmp/manifest-before-agent" distrobox.ini
+BOX_PROVISIONER=none BOX_SSH_AGENT_SOCKET="$tmp/agent.sock" bash ./box e -r
+grep -F -- "additional_flags=\"--volume $tmp/agent.sock:/run/boxkit-ssh-agent.sock --env SSH_AUTH_SOCK=/run/boxkit-ssh-agent.sock\"" distrobox.ini
+test "$(grep -c '^additional_flags=' distrobox.ini)" -eq 1
+test "$(cat .distrobox/ssh-agent-source)" = "$tmp/agent.sock"
+test "$(cat .distrobox/initialized)" = instance-3
+test "$(wc -l < "$BOX_TEST_SETUP_LOG")" -eq 3
+test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 3
 # Reusing a name after external replacement must not reuse the stale marker.
 printf 'external-instance\n' > "$BOX_TEST_CONTAINER_ID_FILE"
 BOX_PROVISIONER=none bash ./box e
 test "$(cat .distrobox/initialized)" = external-instance
-test "$(wc -l < "$BOX_TEST_SETUP_LOG")" -eq 3
-test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 3
+test "$(wc -l < "$BOX_TEST_SETUP_LOG")" -eq 4
+test "$(grep -c '/usr/bin/env' "$BOX_TEST_ENTER_LOG")" -eq 4
 # Failed setup must leave the instance uninitialized and retry on next enter.
 cat > box_setup.sh <<'SETUP'
 #!/usr/bin/env bash
