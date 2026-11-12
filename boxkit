@@ -79,7 +79,6 @@ function create_with_confirmation
   local target=$1
   local target_exists=1
   [ -e "$target" ] && target_exists=0
-  yn="y"
   [ "${target_exists}" = "0" ] && { echo "Refusing to overwrite existing $target" >&2; return 1; }
 
   # Never delete existing container data during scaffolding.
@@ -110,7 +109,7 @@ EOF
 function generate_box_script
 {
 cat <<BOX > "$box_script_path"
-#!/bin/sh
+#!/usr/bin/env bash
 
 function show_box_script_usage
 {
@@ -122,13 +121,12 @@ function show_box_script_usage
   echo ""
   echo "COMMANDS:"
   echo -e "\\tenter | e [-r]"
-  echo -e "\\t\\tEnter your development container via distrobox. If the continer have not existed, ${script_name} will create it."
-  echo -e "\\t\\tYou can pass -r option to recreate the container then ${home_name} will be recreated also."
+  echo -e "\\t\\tEnter your development container via distrobox. If the container does not exist, it will be created."
+  echo -e "\\t\\tUse -r to recreate the container; the project-local HOME is preserved."
   echo ""
   echo -e "\\tInitialization runs automatically on first enter"
   echo -e "\\t\\tThe first enter asks whether to provision Mi."
 
-  echo -e "\\\t\\tYou can pass -f option to force initialize again."
   echo ""
   echo -e "\\tstop | s"
   echo -e "\\t\\tStop the development container."
@@ -151,17 +149,14 @@ function container_id
     }'
 }
 
-function current_container_id
-{
-  container_id
-}
-
 function prepare_ssh_agent
 {
   local socket="\${BOX_SSH_AGENT_SOCKET:-\${SSH_AUTH_SOCK:-}}"
   local marker="${box_entrypoint_path}/.distrobox/ssh-agent-source"
   local existing=0
   [ -n "\$(container_id)" ] && existing=1
+  # Recreation must refresh the forwarding manifest even when a container exists.
+  [ "\${BOX_RECREATE:-0}" = 1 ] && existing=0
   if [ -z "\$socket" ] || [ ! -S "\$socket" ]; then
     echo "Warning: no active host ssh-agent socket; forwarding disabled." >&2
     if [ "\$existing" = 1 ] && [ -f "\$marker" ]; then
@@ -193,20 +188,12 @@ function prepare_ssh_agent
 
 function create_box
 {
-  [ "\${CONTAINER_ID}" ] && return
+  [ "\${CONTAINER_ID}" ] && return 0
   # Preserve the existing container HOME even when recreating the container.
   if [ -n "\$(container_id)" ]; then
     distrobox assemble rm --file "$distrobox_manifest_path" || return 1
   fi
   distrobox assemble create --file "$distrobox_manifest_path" || return 1
-}
-
-function create_symlink
-{
-  [ -L "\${2}" ] && return
-
-  [ ! -e "\${1}" ] && echo "Cannot find source path. So do nothing. (\${1})" && return
-  ln -s "\${1}" "\${2}"
 }
 
 function generate_bashrc
@@ -318,15 +305,15 @@ case "\${cmd}" in
     recreate=0
     [ "\${1:-}" = "-r" ] && recreate=1
     marker="${box_entrypoint_path}/.distrobox/initialized"
-    id="\$(current_container_id)"
+    id="\$(container_id)"
     if [ "\$recreate" -eq 1 ]; then
-      prepare_ssh_agent || exit 1
+      BOX_RECREATE=1 prepare_ssh_agent || exit 1
       create_box || exit 1
-      id="\$(current_container_id)"
+      id="\$(container_id)"
     elif [ -z "\$id" ]; then
       prepare_ssh_agent || exit 1
       create_box || exit 1
-      id="\$(current_container_id)"
+      id="\$(container_id)"
     else
       prepare_ssh_agent || exit 1
     fi
@@ -374,8 +361,8 @@ case "\${cmd}" in
   replace|r) distrobox assemble create --replace --file "${distrobox_manifest_path}";;
   stop|s)
     [ "\${CONTAINER_ID}" ] && exit 0
-    [ ! "\$(distrobox list | rg ${container_name})" ] && exit 0
-    distrobox stop ${container_name}
+    [ -z "\$(container_id)" ] && exit 0
+    distrobox stop "${container_name}"
     ;;
   *) show_box_script_usage;;
 esac
