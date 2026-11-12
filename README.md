@@ -49,17 +49,28 @@ OPTIONS:
 Boxkit creates a project-local container HOME. It does not automatically link
 host SSH credentials or Git/Neovim configuration into that HOME.
 
-After entering the container, set `MI_REPO_PATH` to an accessible checkout of
-[Mi](https://github.com/mtwtkman/mi) and initialize:
+Mi provisioning is optional. After entering the container, run:
 
 ```bash
-MI_REPO_PATH=/path/to/mi ./box init
+BOX_PROVISIONER=mi ./box init
 ```
 
-This runs `MI_PROFILE=container ./mi deploy`, which copies the Git and
-OpenCode configuration by default. Install `fzf` and `ripgrep` from the
-container package manager; they are included in the generated Distrobox
-manifest's `additional_packages`.
+This downloads the Mi setup script and runs it with `MI_PROFILE=container`,
+deploying Git and OpenCode configuration by default. It requires `curl` and
+`git` in the container, and a Mi version that supports container setup.
+
+For an existing local checkout instead of downloading the setup script:
+
+```bash
+BOX_PROVISIONER=mi MI_REPO_PATH=/path/to/mi ./box init
+```
+
+To review and pin a particular setup script, set `BOX_MI_SETUP_URL` to a
+trusted immutable URL. Do not point it at an unreviewed script. With no
+`BOX_PROVISIONER`, `./box init` only generates the container's shell setup.
+Initialization failure leaves it unmarked so the command can be retried.
+Install `fzf` and `ripgrep` using the container package manager; they are
+also listed in the generated manifest.
 
 **Safety:** Re-running the Boxkit generator refuses to overwrite existing
 manifest/wrapper files. The container HOME is not removed by the generator or
