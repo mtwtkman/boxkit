@@ -311,7 +311,8 @@ detect_integrations() {
   AGENT_SOCKET='' WAYLAND_SOCKET='' DBUS_SOCKET='' OPEN_DIRECTORY=''
   if [[ "$HOST_OPEN" == true ]]; then
     [[ -n "${XDG_RUNTIME_DIR:-}" ]] || die 'host_open requires XDG_RUNTIME_DIR'
-    install_host_open\n    OPEN_DIRECTORY="$XDG_RUNTIME_DIR/boxkit-open"
+    install_host_open
+    OPEN_DIRECTORY="$XDG_RUNTIME_DIR/boxkit-open"
     mkdir -p -- "$OPEN_DIRECTORY"
     chmod 700 -- "$OPEN_DIRECTORY"
     [[ -S "$OPEN_DIRECTORY/xdg-open.sock" ]] || warn 'host opener not running; start boxkit-open.service on the host'
@@ -623,7 +624,12 @@ main() {
   case "$command" in
     -h|--help|'') usage; return;;
   esac
-  if [[ "$command" == host-open-uninstall ]]; then\n    [[ "$#" -eq 1 ]] || die "usage: boxkit host-open-uninstall"\n    uninstall_host_open\n    return\n  fi\n  ROOT="$(project_dir)"
+  if [[ "$command" == host-open-uninstall ]]; then
+    [[ "$#" -eq 1 ]] || die "usage: boxkit host-open-uninstall"
+    uninstall_host_open
+    return
+  fi
+  ROOT="$(project_dir)"
   HOST_HOME="$HOME"
   if [[ "$command" == _init ]]; then load_config; init_inside; return; fi
   normalize_host_session_bus
