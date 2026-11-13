@@ -349,7 +349,7 @@ load_config() {
   [[ "$NETWORK" == private || "$NETWORK" == none ]] || die "network.mode must be private or none"
   [[ "$HOME_PATH" != /* && "$HOME_PATH" != *..* ]] || die "container.home must be a relative path without '..'"
   LOCAL_HOME="$ROOT/$HOME_PATH"
-  mkdir -p -- "$LOCAL_HOME" "$ROOT/.boxkit/state" "$LOCAL_HOME/.boxkit-runtime"
+  mkdir -p -- "$LOCAL_HOME" "$ROOT/.boxkit/state" "$LOCAL_HOME/.boxkit-runtime/pulse"
   chmod 700 "$LOCAL_HOME/.boxkit-runtime"
   STATE_DIR="$ROOT/.boxkit/state"
 }
