@@ -206,6 +206,7 @@ make_container() {
     --userns=keep-id --user "$(id -u):$(id -g)"
     --workdir /workspace
     --env HOME=/home/dev
+    --env SHELL=/bin/bash
     --env "BOXKIT_NAME=${BOXKIT_NAME:-$NAME}"
     --env XDG_CONFIG_HOME=/home/dev/.config
     --env XDG_CACHE_HOME=/home/dev/.cache
@@ -434,7 +435,7 @@ main() {
       [[ "${2:-}" == -r ]] && recreate=true
       ensure_container "$recreate"
       initialize_if_needed
-      exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace "$NAME" /bin/bash -i
+      exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace --env SHELL=/bin/bash "$NAME" /bin/bash -i
       ;;
     exec)
       shift
