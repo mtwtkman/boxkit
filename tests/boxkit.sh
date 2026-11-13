@@ -96,6 +96,13 @@ grep -q 'create --name' "$BOX_TEST_LOG"
 grep -Fq -- '--hostname=haskell-dev' "$BOX_TEST_LOG"
 grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
 grep -Fq -- 'fd fzf neovim ripgrep make gcc' "$BOX_TEST_LOG"
+# The Arch bootstrap must fully upgrade before installing new packages.
+# Synchronizing only (-Sy) causes OpenSSL SONAME conflicts in older images.
+grep -Fq -- 'pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh' "$BOX_TEST_LOG"
+if grep -Eq 'pacman -Sy( |$)' "$BOX_TEST_LOG"; then
+  echo 'FAIL: Arch bootstrap performs a partial upgrade' >&2
+  exit 1
+fi
 
 grep -q 'docker.io/library/archlinux:latest' "$BOX_TEST_LOG"
 grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
