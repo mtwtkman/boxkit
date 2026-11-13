@@ -9,7 +9,7 @@
 - **Notifications**: with `dbus_session = true`, `notify-send` can reach the host's `org.freedesktop.Notifications` service (for example, mako), when installed and running. On Arch Linux, Boxkit installs `libnotify` and `libpulse` during bootstrap, providing `notify-send`, `pactl`, and `paplay`. Event sound themes are optional. There is no mako-specific mount. Disable D-Bus access when not trusted.
 - **GPU**: optional `gpu = true` adds `/dev/dri` and keeps supplementary groups. The container still needs suitable userspace drivers.
 - **Volumes**: explicit read-only/read-write bind mounts. GPU and GUI are independent options.
-- **Port publishing**: `publish = host-port:container-port`, exposed only via host loopback.
+- **Networking**: `network.mode = private` (default) provides isolated container networking with loopback-bound `publish` mappings. `network.mode = host` shares the host network namespace via Podman `--network host`; `network.mode = none` disables networking. `publish` is valid only in `private` mode. Host mode reduces network isolation and shares the host's loopback and listening ports.
 
 Boxkit records a fingerprint including the configuration and SSH-agent, Wayland, D-Bus, and audio socket inode identities. If the agent, Wayland, D-Bus, or audio socket is replaced, `enter` refuses the old mount and tells you to run `./box enter -r`. Recreating a running container is never automatic. A missing SSH agent, D-Bus session socket, or audio socket is allowed with a warning, but changing its availability requires explicit recreation. This is particularly relevant after a host logout/login or session bus restart.
 

@@ -284,7 +284,7 @@ host_open = false
 gpu = false
 
 [network]
-# private = container networking; none = no network.
+# private = isolated container networking; host = host network; none = disabled.
 mode = private
 # Publish host-loopback port to container port; repeat if needed.
 # publish = 8080:8080
@@ -365,7 +365,8 @@ load_config() {
   for pkg in "${PACKAGES[@]}"; do
     [[ "$pkg" =~ ^[a-zA-Z0-9][a-zA-Z0-9.+_@:-]*$ ]] || die "invalid package name: $pkg"
   done
-  [[ "$NETWORK" == private || "$NETWORK" == none ]] || die "network.mode must be private or none"
+  [[ "$NETWORK" == private || "$NETWORK" == none || "$NETWORK" == host ]] || die "network.mode must be private, host or none"
+  [[ "$NETWORK" == private || "${#PORTS[@]}" -eq 0 ]] || die "network.publish requires network.mode=private"
   [[ "$HOME_PATH" != /* && "$HOME_PATH" != *..* ]] || die "container.home must be a relative path without '..'"
   LOCAL_HOME="$ROOT/$HOME_PATH"
   mkdir -p -- "$LOCAL_HOME" "$ROOT/.boxkit/state" "$LOCAL_HOME/.boxkit-runtime/pulse"
@@ -498,7 +499,10 @@ make_container() {
   local -a MOUNT_ARGS=()
   for item in "${MOUNTS[@]}"; do validate_mount "$item"; done
   args+=("${MOUNT_ARGS[@]}")
-  if [[ "$NETWORK" == none ]]; then args+=(--network none); fi
+  case "$NETWORK" in
+    none) args+=(--network none);;
+    host) args+=(--network host);;
+  esac
   for port in "${PORTS[@]}"; do
     [[ "$NETWORK" == private ]] || die "ports require network.mode=private"
     [[ "$port" =~ ^[0-9]+:[0-9]+$ ]] || die "publish must be host-port:container-port"
