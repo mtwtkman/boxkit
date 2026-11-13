@@ -7,14 +7,10 @@ directory into the container. It does **not** expose Podman control or host
 shell execution. Absolute HTTP(S) URLs and local `file://` URIs are accepted. It works with
 `dbus_session = false`, because the host listener runs in the host session.
 
-Install the host listener and user service on the Linux host:
-
-```sh
-install -Dm755 host/boxkit-open-server ~/.local/bin/boxkit-open-server
-install -Dm644 host/boxkit-open.service ~/.config/systemd/user/boxkit-open.service
-systemctl --user daemon-reload
-systemctl --user enable --now boxkit-open.service
-```
+The standalone Boxkit script installs and starts the shared host listener and
+systemd user service on first use when `host_open = true`. If both files
+already exist, it preserves them without overwriting. A partially installed
+service is treated as an error rather than overwritten.
 
 Set `host_open = true` under `[integration]` in `boxkit.ini`.
 Copy `localbin/xdg-open` into the container's PATH (for example, through
@@ -39,3 +35,11 @@ The host listener inherits its user service environment and attempts to
 recover the active sway/Firefox session D-Bus address from host processes.
 If the session uses a different browser, set `BROWSER` and optionally
 `DESKTOPAPP` in the user service environment.
+
+## Removing the shared host service
+
+Run `./box host-open-uninstall` (or `boxkit host-open-uninstall`) explicitly.
+This removes only an installation created by Boxkit, and refuses to remove
+files that have been modified since installation. It stops the service for
+**all** boxes; `./box rm` never removes it. Re-entering a box with
+`host_open = true` installs it again.
