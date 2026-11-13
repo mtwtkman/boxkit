@@ -13,7 +13,9 @@ bash "$repo/boxkit" init
 bash -n box
 grep -q '^engine = podman$' boxkit.ini
 grep -q '^image = docker.io/library/archlinux:latest$' boxkit.ini
-grep -q '^dbus_session = true
+grep -q '^dbus_session = true$' boxkit.ini
+grep -q '^host_open = false$' boxkit.ini
+[[ ! -e Containerfile ]]
 if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
 mkdir -p .boxkit/home
 printf 'keep\n' > .boxkit/home/preserved
