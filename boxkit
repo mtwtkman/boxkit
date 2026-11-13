@@ -160,15 +160,17 @@ uninstall_host_open() {
   systemctl --user daemon-reload
   printf '%s\n' 'Removed Boxkit-managed host opener (shared by all boxes).'
 }
-\nusage() {
+
+usage() {
   cat <<'HELP'
-Usage: boxkit init | enter|e [-r] | exec COMMAND... | stop|s | rm | list|ls
+Usage: boxkit init | enter|e [-r] | exec COMMAND... | stop|s | rm | list|ls | host-open-uninstall
   init             Generate boxkit.ini and ./box (never overwrite existing files).
   enter, e [-r]    Create/start and enter, -r explicitly recreates.
   exec COMMAND...  Run a command in an existing running container.
   stop, s          Stop the container.
   rm               Remove the container (preserves project HOME).
-  list, ls         Show boxkit-managed containers.\n  host-open-uninstall  Remove the shared Boxkit-managed host opener.
+  list, ls         Show boxkit-managed containers.
+  host-open-uninstall  Remove the shared Boxkit-managed host opener.
 Run ./box from a project after initialization.
 HELP
 }
