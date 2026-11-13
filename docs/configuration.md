@@ -28,7 +28,7 @@ host_open = false
 gpu = false
 
 [network]
-# private = container networking; none = no network.
+# private = isolated container networking; host = host network; none = disabled.
 mode = private
 # Publish host-loopback port to container port; repeat if needed.
 # publish = 8080:8080
@@ -63,7 +63,7 @@ The optional `[packages] additional` key accepts whitespace-separated package na
 
 `[integration] audio = true` (the default, including legacy INI files without the key) detects the host's `$XDG_RUNTIME_DIR/pulse/native` socket, mounts it in the container, and sets `PULSE_SERVER` for PulseAudio-compatible clients (including `pipewire-pulse`). If unavailable, Boxkit warns and skips the audio integration. Set `audio = false` to disable it. This shares the host audio server, potentially enabling both playback and microphone capture; the mount's read/write flag does not restrict the server's operations. Host notifications (including mako) use the existing `dbus_session = true` option, not an additional notification mount. A changed audio socket requires `./box enter -r`.
 
-Repeated `publish` and `mount` entries are accepted. Network publishes are bound to host loopback (127.0.0.1). `network.mode = none` disables the network and disallows publishes. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Mount sources support the host environment variables `$HOME`, `${HOME}`, `$XDG_RUNTIME_DIR`, and `${XDG_RUNTIME_DIR}` (and the existing `~` syntax). Only these names are expanded; no shell commands or arbitrary variables are evaluated. If `XDG_RUNTIME_DIR` is referenced but unset or empty, Boxkit fails with an explicit error. Changing mounts requires `./box enter -r`. Settings are parsed as data and never sourced as shell.
+Repeated `publish` and `mount` entries are accepted. `network.mode = private` (the default) uses an isolated Podman network and permits `publish` mappings bound to host loopback (127.0.0.1). `network.mode = host` uses `--network host`, sharing the host network namespace (including host loopback and listening ports), so no `publish` mappings are allowed. `network.mode = none` disables the network and also disallows publishes. Host network mode reduces network isolation; select it only for trusted containers. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Mount sources support the host environment variables `$HOME`, `${HOME}`, `$XDG_RUNTIME_DIR`, and `${XDG_RUNTIME_DIR}` (and the existing `~` syntax). Only these names are expanded; no shell commands or arbitrary variables are evaluated. If `XDG_RUNTIME_DIR` is referenced but unset or empty, Boxkit fails with an explicit error. Changing mounts requires `./box enter -r`. Settings are parsed as data and never sourced as shell.
 
 The default image is Arch Linux (`docker.io/library/archlinux:latest`). The first entry installs basic development prerequisites (bash, git, curl, SSH client, certificate bundle, and sudo) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
 
