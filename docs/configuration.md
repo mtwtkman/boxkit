@@ -13,6 +13,7 @@ home = .boxkit/home
 ssh_agent = true
 wayland = true
 dbus_session = true
+audio = true
 host_open = false
 gpu = false
 
@@ -41,6 +42,8 @@ The optional `[packages] additional` key accepts whitespace-separated package na
 `[setup] hook` may be repeated. Hooks execute as the development user inside the container in their listed order, after optional Mi provisioning and before `box_setup.sh`, on **first initialization per container instance**, not on every entry. Hooks run in separate Bash processes: exporting an environment variable in a hook does not persist into later entries or into another hook. For persistent environment use an image setting or `[engine_args] create_arg = --env=NAME=value` (the standard XDG and SSH-agent variables are already managed by Boxkit). Hooks execute arbitrary shell commands: only use trusted project settings.
 
 `[engine_args] create_arg` may be repeated; each entry is **one Podman create CLI argument**, e.g. `--hostname=haskell-dev`, `--env=FOO=bar`, `--cap-add=NET_ADMIN`. Use `--option=value` syntax for options with values; whitespace-separated CLI fragments are deliberately not parsed, sourced, or evaluated. These are **Podman-specific** escape-hatch flags and may override isolation assumptions; use built-in integration/mount/network keys when available. Changing them requires explicit `./box enter -r`.
+
+`[integration] audio = true` (the default, including legacy INI files without the key) detects the host's `$XDG_RUNTIME_DIR/pulse/native` socket, mounts it in the container, and sets `PULSE_SERVER` for PulseAudio-compatible clients (including `pipewire-pulse`). If unavailable, Boxkit warns and skips the audio integration. Set `audio = false` to disable it. This shares the host audio server, potentially enabling both playback and microphone capture; the mount's read/write flag does not restrict the server's operations. Host notifications (including mako) use the existing `dbus_session = true` option, not an additional notification mount. A changed audio socket requires `./box enter -r`.
 
 Repeated `publish` and `mount` entries are accepted. Network publishes are bound to host loopback (127.0.0.1). `network.mode = none` disables the network and disallows publishes. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Mount sources support the host environment variables `$HOME`, `${HOME}`, `$XDG_RUNTIME_DIR`, and `${XDG_RUNTIME_DIR}` (and the existing `~` syntax). Only these names are expanded; no shell commands or arbitrary variables are evaluated. If `XDG_RUNTIME_DIR` is referenced but unset or empty, Boxkit fails with an explicit error. Changing mounts requires `./box enter -r`. Settings are parsed as data and never sourced as shell.
 

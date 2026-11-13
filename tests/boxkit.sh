@@ -14,6 +14,7 @@ bash -n box
 grep -q '^engine = podman$' boxkit.ini
 grep -q '^image = docker.io/library/archlinux:latest$' boxkit.ini
 grep -q '^dbus_session = true$' boxkit.ini
+grep -q '^audio = true$' boxkit.ini
 grep -q '^host_open = false$' boxkit.ini
 [[ ! -e Containerfile ]]
 if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
@@ -49,6 +50,11 @@ done
 [[ -S "$tmp/runtime/bus" ]]
 export XDG_RUNTIME_DIR="$tmp/runtime"
 mkdir -p "$tmp/runtime/boxkit-open" "$tmp/runtime/pulse" "$HOME/.config/boxkit-test"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/pulse/native" &
+audio_pid=$!
+trap 'kill "$bus_pid" "$audio_pid" 2>/dev/null || :; rm -rf -- "$tmp"' EXIT
+for attempt in {1..60}; do [[ -S "$tmp/runtime/pulse/native" ]] && break; sleep 0.05; done
+[[ -S "$tmp/runtime/pulse/native" ]]
 cat >> boxkit.ini <<'MOUNTS'
 
 [mounts]
@@ -183,6 +189,8 @@ grep -Fq -- "src=$tmp/runtime/pulse,dst=/run/host-pulse-braced,readonly" "$BOX_T
 grep -Fq -- "src=$HOME/.config/boxkit-test,dst=/mnt/host-config,readonly" "$BOX_TEST_LOG"
 grep -Fq -- "src=$HOME/.config/boxkit-test,dst=/mnt/host-config-braced,readonly" "$BOX_TEST_LOG"
 grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/pulse/native,dst=/home/dev/.boxkit-runtime/pulse/native,rw" "$BOX_TEST_LOG"
+grep -Fq -- '--env PULSE_SERVER=unix:/home/dev/.boxkit-runtime/pulse/native' "$BOX_TEST_LOG"
 grep -Fq -- "src=$tmp/runtime/bus,dst=/home/dev/.boxkit-runtime/bus" "$BOX_TEST_LOG"
 grep -Fq -- '--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime' "$BOX_TEST_LOG"
 grep -Fq -- "src=$tmp/runtime/boxkit-open,dst=/home/dev/.boxkit-runtime/open,readonly" "$BOX_TEST_LOG"
@@ -208,6 +216,26 @@ for attempt in {1..60}; do [[ -S "$tmp/runtime/bus" ]] && break; sleep 0.05; don
 if ./box enter 2>/dev/null; then echo 'replaced bus socket accepted without recreation' >&2; exit 1; fi
 ./box enter -r
 grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
+# Replacing the host audio socket must invalidate an existing container.
+kill "$audio_pid" 2>/dev/null || :
+wait "$audio_pid" 2>/dev/null || :
+mv "$tmp/runtime/pulse/native" "$tmp/runtime/pulse/native-old"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/pulse/native" &
+audio_pid=$!
+for attempt in {1..60}; do [[ -S "$tmp/runtime/pulse/native" ]] && break; sleep 0.05; done
+[[ -S "$tmp/runtime/pulse/native" ]]
+if ./box enter 2>/dev/null; then echo 'replaced audio socket accepted without recreation' >&2; exit 1; fi
+./box enter -r
+# Turning off audio removes the mount and PULSE_SERVER setting after recreation.
+sed -i 's/audio = true/audio = false/' boxkit.ini
+if ./box enter 2>/dev/null; then echo 'changed audio config accepted without recreation' >&2; exit 1; fi
+: > "$BOX_TEST_LOG"
+./box enter -r
+! grep -Fq -- 'dst=/home/dev/.boxkit-runtime/pulse/native' "$BOX_TEST_LOG"
+! grep -Fq -- '--env PULSE_SERVER=' "$BOX_TEST_LOG"
+# Restore default for subsequent checks.
+sed -i 's/audio = false/audio = true/' boxkit.ini
+./box enter -r
 # Shell syntax is not interpreted in create_arg values.
 sed -i 's/create_arg = --hostname=haskell-dev/create_arg = hostname=haskell-dev/' boxkit.ini
 if ./box list 2>/dev/null; then echo 'invalid create_arg accepted' >&2; exit 1; fi
