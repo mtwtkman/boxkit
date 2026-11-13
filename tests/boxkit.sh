@@ -48,7 +48,15 @@ for attempt in {1..60}; do
 done
 [[ -S "$tmp/runtime/bus" ]]
 export XDG_RUNTIME_DIR="$tmp/runtime"
-mkdir -p "$tmp/runtime/boxkit-open"
+mkdir -p "$tmp/runtime/boxkit-open" "$tmp/runtime/pulse" "$HOME/.config/boxkit-test"
+cat >> boxkit.ini <<'MOUNTS'
+
+[mounts]
+mount = $XDG_RUNTIME_DIR/pulse|/run/host-pulse|ro
+mount = ${XDG_RUNTIME_DIR}/pulse|/run/host-pulse-braced|ro
+mount = $HOME/.config/boxkit-test|/mnt/host-config|ro
+mount = ${HOME}/.config/boxkit-test|/mnt/host-config-braced|ro
+MOUNTS
 # Host address is intentionally different: container must never inherit it.
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$tmp/stale-session-bus"
 
@@ -170,6 +178,10 @@ if grep -Eq 'pacman -Sy( |$)' "$BOX_TEST_LOG"; then
 fi
 
 grep -q 'docker.io/library/archlinux:latest' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/pulse,dst=/run/host-pulse,readonly" "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/pulse,dst=/run/host-pulse-braced,readonly" "$BOX_TEST_LOG"
+grep -Fq -- "src=$HOME/.config/boxkit-test,dst=/mnt/host-config,readonly" "$BOX_TEST_LOG"
+grep -Fq -- "src=$HOME/.config/boxkit-test,dst=/mnt/host-config-braced,readonly" "$BOX_TEST_LOG"
 grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
 grep -Fq -- "src=$tmp/runtime/bus,dst=/home/dev/.boxkit-runtime/bus" "$BOX_TEST_LOG"
 grep -Fq -- '--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime' "$BOX_TEST_LOG"
