@@ -71,6 +71,14 @@ case "${1:-}" in
   rm) rm -f "$BOX_TEST_ID" "$BOX_TEST_STATUS";;
   ps) echo 'NAMES STATUS IMAGE';;
   exec)
+    # Validate every shell payload exactly as Podman will pass it. Checking
+    # only the outer boxkit Bash syntax misses errors inside -c strings.
+    args=("$@")
+    for ((i=0; i<${#args[@]}; i++)); do
+      if [[ "${args[i]}" == /bin/sh && "${args[i+1]:-}" == -c ]]; then
+        /bin/sh -n -c "${args[i+2]}" || exit 1
+      fi
+    done
     if [[ "$*" == *' /bin/bash /workspace/box _init'* ]]; then
       for arg in "$@"; do
         if [[ "$arg" == BOX_CONTAINER_INSTANCE=* ]]; then
