@@ -92,6 +92,17 @@ case "${1:-}" in
   rm) rm -f "$BOX_TEST_ID" "$BOX_TEST_STATUS";;
   ps) echo 'NAMES STATUS IMAGE';;
   exec)
+    if [[ "$*" == *' /usr/bin/test -d '* ]]; then
+      # Emulate the container's mounted workspace for workdir validation.
+      candidate="${@: -1}"
+      case "$candidate" in
+        /workspace) exit 0;;
+        /workspace/*)
+          relative="${candidate#/workspace/}"
+          [[ -d "$BOX_TEST_PROJECT/$relative" ]] && exit 0 || exit 1;;
+        *) exit 1;;
+      esac
+    fi
     if [[ "$*" == *' /bin/sh -c '* && "$*" == *'xdg-open'* ]]; then
       cat > "$BOX_TEST_CLIENT"
     fi
@@ -123,6 +134,7 @@ export BOX_TEST_SYSTEMCTL_LOG="$tmp/systemctl-log"
 chmod +x "$tmp/bin/podman"
 export BOX_TEST_CLIENT="$tmp/installed-xdg-open"
 export BOX_TEST_LOG="$tmp/podman-log"
+export BOX_TEST_PROJECT="$tmp/project"
 export BOX_TEST_HOST_DBUS_LOG="$tmp/podman-host-dbus-log"
 export BOX_TEST_ID="$tmp/container-id"
 export BOX_TEST_STATUS="$tmp/container-status"
@@ -140,6 +152,16 @@ grep -Fq "BOXKIT_OPEN_SOCKET" "$BOX_TEST_CLIENT"
 grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
 # Neovim and other subprocesses must inherit the same shell as the interactive entry.
 grep -Fq -- '--workdir /workspace --env SHELL=/bin/bash --env TERM=tmux-256color --env COLORTERM=truecolor --env NO_COLOR=1 --env CLICOLOR=1 --env CLICOLOR_FORCE=0 --env LS_COLORS=di=01;34 project-dev /bin/bash -i' "$BOX_TEST_LOG"
+# Requested directories are selected only if they exist inside the container.
+mkdir -p src/nested
+./box e --workdir /workspace/src/nested
+grep -Fq -- '--workdir /workspace/src/nested --env SHELL=/bin/bash' "$BOX_TEST_LOG"
+./box e --workdir /workspace/src/missing
+grep -Fq -- '--workdir /workspace --env SHELL=/bin/bash' "$BOX_TEST_LOG"
+./box e --workdir=/workspace/src/nested -r
+grep -Fq -- '--workdir /workspace/src/nested --env SHELL=/bin/bash' "$BOX_TEST_LOG"
+if ./box e --workdir relative/path 2>/dev/null; then echo 'relative workdir accepted' >&2; exit 1; fi
+if ./box e --workdir 2>/dev/null; then echo 'missing workdir argument accepted' >&2; exit 1; fi
 # Terminal environment is determined per invocation, never fixed in Podman create.
 ! grep -E '^create .*--env TERM=' "$BOX_TEST_LOG"
 # Changing host terminal settings applies immediately without container recreation.
