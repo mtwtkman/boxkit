@@ -432,6 +432,18 @@ initialize_if_needed() {
     "$NAME" /bin/bash /workspace/box _init
   [[ -f "$marker" && "$(cat "$marker")" == "$id" ]] || die "container initialization incomplete"
 }
+terminal_env_args() {
+  # Forward the active terminal session on each invocation, not at container
+  # creation: entering from inside/outside tmux may change TERM and COLORTERM.
+  # Only pass variables defined on the host (including explicitly empty ones).
+  TERMINAL_ENV_ARGS=()
+  local name
+  for name in TERM COLORTERM NO_COLOR CLICOLOR CLICOLOR_FORCE LS_COLORS; do
+    if [[ ${!name+x} ]]; then
+      TERMINAL_ENV_ARGS+=(--env "$name=${!name}")
+    fi
+  done
+}
 main() {
   local command="${1:-}" recreate=false
   if [[ "$command" == init ]]; then
@@ -455,7 +467,8 @@ main() {
       [[ "${2:-}" == -r ]] && recreate=true
       ensure_container "$recreate"
       initialize_if_needed
-      exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace --env SHELL=/bin/bash "$NAME" /bin/bash -i
+      terminal_env_args
+      exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace --env SHELL=/bin/bash "${TERMINAL_ENV_ARGS[@]}" "$NAME" /bin/bash -i
       ;;
     exec)
       shift
@@ -463,7 +476,8 @@ main() {
       container_running || die "container not running; use ./box enter"
       local -a tty_opts=(-i)
       if [[ -t 0 && -t 1 ]]; then tty_opts+=(-t); fi
-      exec podman exec "${tty_opts[@]}" --user "$(id -u):$(id -g)" "$NAME" "$@"
+      terminal_env_args
+      exec podman exec "${tty_opts[@]}" --user "$(id -u):$(id -g)" "${TERMINAL_ENV_ARGS[@]}" "$NAME" "$@"
       ;;
     stop|s)
       if [[ -n "$(container_id)" ]] && container_running; then podman stop "$NAME"; fi

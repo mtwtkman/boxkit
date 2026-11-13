@@ -95,12 +95,27 @@ export BOX_TEST_HOST_DBUS_LOG="$tmp/podman-host-dbus-log"
 export BOX_TEST_ID="$tmp/container-id"
 export BOX_TEST_STATUS="$tmp/container-status"
 export BOX_PROVISIONER=none
+export TERM=tmux-256color COLORTERM=truecolor NO_COLOR=1
+export CLICOLOR=1 CLICOLOR_FORCE=0 LS_COLORS='di=01;34'
 ./box enter
 [[ -f .boxkit/state/initialized ]]
 # Every interactive entry must source .bashrc (bash -i, not login-only bash -l).
 grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
 # Neovim and other subprocesses must inherit the same shell as the interactive entry.
-grep -Fq -- '--workdir /workspace --env SHELL=/bin/bash project-dev /bin/bash -i' "$BOX_TEST_LOG"
+grep -Fq -- '--workdir /workspace --env SHELL=/bin/bash --env TERM=tmux-256color --env COLORTERM=truecolor --env NO_COLOR=1 --env CLICOLOR=1 --env CLICOLOR_FORCE=0 --env LS_COLORS=di=01;34 project-dev /bin/bash -i' "$BOX_TEST_LOG"
+# Terminal environment is determined per invocation, never fixed in Podman create.
+! grep -E '^create .*--env TERM=' "$BOX_TEST_LOG"
+# Changing host terminal settings applies immediately without container recreation.
+export TERM=xterm-256color COLORTERM=
+./box enter
+grep -Fq -- '--env TERM=xterm-256color --env COLORTERM= --env NO_COLOR=1' "$BOX_TEST_LOG"
+unset COLORTERM CLICOLOR_FORCE
+./box exec env
+[[ "$(tail -n 1 "$BOX_TEST_LOG")" == *'--env TERM=xterm-256color'* ]]
+[[ "$(tail -n 1 "$BOX_TEST_LOG")" != *'COLORTERM='* ]]
+[[ "$(tail -n 1 "$BOX_TEST_LOG")" != *'CLICOLOR_FORCE='* ]]
+# Restore host settings for the remaining integration scenarios.
+export TERM=tmux-256color COLORTERM=truecolor CLICOLOR_FORCE=0
 grep -Fq 'box_name="${BOXKIT_NAME:-${HOSTNAME:-box}}"' box
 # The generated shell preset must not require the optional hostname executable.
 ! grep -Fq 'box_name="${CONTAINER_ID:-$(hostname)}"' box
