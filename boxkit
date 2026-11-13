@@ -8,15 +8,169 @@ trim() { local x="$1"; x="${x#"${x%%[![:space:]]*}"}"; x="${x%"${x##*[![:space:]
 script_path() { readlink -f -- "${BASH_SOURCE[0]}"; }
 project_dir() { cd -- "$(dirname -- "$(script_path)")" && pwd -P; }
 valid_bool() { [[ "$1" == true || "$1" == false ]] || die "expected true/false, got $1"; }
+# The opener is embedded so the standalone downloaded boxkit script can install it.
+host_open_service_paths() {
+  OPEN_BIN="$HOME/.local/bin/boxkit-open-server"
+  OPEN_UNIT="$HOME/.config/systemd/user/boxkit-open.service"
+  OPEN_MARKER="$HOME/.local/state/boxkit/host-open.manifest"
+}
+install_host_open() {
+  host_open_service_paths
+  need systemctl
+  if [[ ! -e "$OPEN_BIN" && ! -L "$OPEN_BIN" && ! -e "$OPEN_UNIT" && ! -L "$OPEN_UNIT" ]]; then
+    mkdir -p -- "$(dirname "$OPEN_BIN")" "$(dirname "$OPEN_UNIT")" "$(dirname "$OPEN_MARKER")"
+    (umask 077; cat > "$OPEN_BIN" <<'BOXKIT_OPEN_SERVER'
+#!/usr/bin/env python3
+"""Restricted host-side URL opener for Boxkit containers."""
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+from urllib.parse import unquote, urlsplit
+
+runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+directory = Path(runtime) / "boxkit-open"
+path = directory / "xdg-open.sock"
+
+def session_environment():
+    env = os.environ.copy()
+    browser = env.get("BROWSER", "firefox")
+    desktop = env.get("DESKTOPAPP", "sway")
+    env["BROWSER"] = browser
+    for process in Path("/proc").iterdir():
+        if not process.name.isdecimal(): continue
+        try:
+            status = (process / "status").read_text()
+            uid = next(x for x in status.splitlines() if x.startswith("Uid:"))
+            if int(uid.split()[1]) != os.getuid(): continue
+            name = (process / "comm").read_text().strip()
+            if name not in (browser, desktop): continue
+            for entry in (process / "environ").read_bytes().split(b"\0"):
+                if entry.startswith(b"DBUS_SESSION_BUS_ADDRESS="):
+                    env["DBUS_SESSION_BUS_ADDRESS"] = entry.split(b"=", 1)[1].decode()
+                    return env
+        except (OSError, ValueError, StopIteration, UnicodeDecodeError):
+            continue
+    return env
+
+def handle(conn):
+    conn.settimeout(5)
+    data = b""
+    while not data.endswith(b"\n") and len(data) <= 65536:
+        chunk = conn.recv(4096)
+        if not chunk: break
+        data += chunk
+    try:
+        if len(data) > 65536 or not data.endswith(b"\n"):
+            raise ValueError("invalid request length")
+        request = json.loads(data)
+        if not isinstance(request, dict) or set(request) != {"url"}:
+            raise ValueError("invalid request")
+        url = request["url"]
+        if not isinstance(url, str) or len(url) > 32768 or any(ord(c) < 32 for c in url):
+            raise ValueError("invalid URL")
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() in ("http", "https"):
+            if not parsed.netloc:
+                raise ValueError("absolute http(s) URL required")
+        elif parsed.scheme.lower() == "file":
+            if parsed.netloc not in ("", "localhost") or parsed.query or parsed.fragment:
+                raise ValueError("invalid local file URI")
+            candidate = Path(unquote(parsed.path))
+            if not candidate.is_absolute():
+                raise ValueError("absolute file path required")
+            resolved = candidate.resolve(strict=True)
+            # Roots are host-controlled; never accept allowlist values from clients.
+            roots = [Path.home()]
+            roots += [Path(p) for p in os.environ.get("BOXKIT_OPEN_FILE_ROOTS", "").split(":") if p]
+            if not any(resolved.is_relative_to(root.resolve()) for root in roots):
+                raise ValueError("file outside host-approved roots")
+            url = resolved.as_uri()
+        else:
+            raise ValueError("unsupported URI scheme")
+        subprocess.Popen(["/usr/bin/xdg-open", url], env=session_environment(),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        reply = {"ok": True}
+    except (ValueError, OSError, TypeError) as exc:
+        reply = {"ok": False, "error": str(exc)}
+    conn.sendall((json.dumps(reply) + "\n").encode())
+
+def main():
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.chmod(0o700)
+    if path.exists() or path.is_symlink():
+        probe = socket.socket(socket.AF_UNIX)
+        try:
+            probe.connect(str(path))
+        except ConnectionRefusedError:
+            path.unlink()
+        else:
+            raise SystemExit("boxkit-open: another listener is running")
+        finally:
+            probe.close()
+    with socket.socket(socket.AF_UNIX) as server:
+        server.bind(str(path))
+        os.chmod(path, 0o600)
+        server.listen(16)
+        try:
+            while True:
+                conn, _ = server.accept()
+                with conn:
+                    try: handle(conn)
+                    except (OSError, ValueError): pass
+        finally:
+            path.unlink(missing_ok=True)
+
+if __name__ == "__main__":
+    main()
+BOXKIT_OPEN_SERVER
+    )
+    chmod 755 -- "$OPEN_BIN"
+    cat > "$OPEN_UNIT" <<'BOXKIT_OPEN_UNIT'
+[Unit]
+Description=Boxkit restricted host URL opener
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/bin/boxkit-open-server
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+BOXKIT_OPEN_UNIT
+    (umask 077; sha256sum -- "$OPEN_BIN" "$OPEN_UNIT" > "$OPEN_MARKER")
+    systemctl --user daemon-reload
+    systemctl --user enable --now boxkit-open.service
+  elif [[ -f "$OPEN_BIN" && -f "$OPEN_UNIT" ]]; then
+    # Existing installation belongs to the user; do not replace it.
+    systemctl --user start boxkit-open.service || die 'host opener could not be started'
+  else
+    die 'incomplete host opener installation; refusing to overwrite existing files'
+  fi
+}
+uninstall_host_open() {
+  host_open_service_paths
+  [[ -f "$OPEN_MARKER" && ! -L "$OPEN_MARKER" ]] || die 'no Boxkit-managed host opener installation found'
+  need sha256sum
+  (cd / && sha256sum -c --status "$OPEN_MARKER") || die 'host opener files have changed; refusing to remove them'
+  systemctl --user disable --now boxkit-open.service || die 'failed to stop host opener'
+  rm -- "$OPEN_BIN" "$OPEN_UNIT" "$OPEN_MARKER"
+  systemctl --user daemon-reload
+  printf '%s\n' 'Removed Boxkit-managed host opener (shared by all boxes).'
+}
+
 usage() {
   cat <<'HELP'
-Usage: boxkit init | enter|e [-r] | exec COMMAND... | stop|s | rm | list|ls
+Usage: boxkit init | enter|e [-r] | exec COMMAND... | stop|s | rm | list|ls | host-open-uninstall
   init             Generate boxkit.ini and ./box (never overwrite existing files).
   enter, e [-r]    Create/start and enter, -r explicitly recreates.
   exec COMMAND...  Run a command in an existing running container.
   stop, s          Stop the container.
   rm               Remove the container (preserves project HOME).
   list, ls         Show boxkit-managed containers.
+  host-open-uninstall  Remove the shared Boxkit-managed host opener.
 Run ./box from a project after initialization.
 HELP
 }
@@ -157,6 +311,7 @@ detect_integrations() {
   AGENT_SOCKET='' WAYLAND_SOCKET='' DBUS_SOCKET='' OPEN_DIRECTORY=''
   if [[ "$HOST_OPEN" == true ]]; then
     [[ -n "${XDG_RUNTIME_DIR:-}" ]] || die 'host_open requires XDG_RUNTIME_DIR'
+    install_host_open
     OPEN_DIRECTORY="$XDG_RUNTIME_DIR/boxkit-open"
     mkdir -p -- "$OPEN_DIRECTORY"
     chmod 700 -- "$OPEN_DIRECTORY"
@@ -469,6 +624,11 @@ main() {
   case "$command" in
     -h|--help|'') usage; return;;
   esac
+  if [[ "$command" == host-open-uninstall ]]; then
+    [[ "$#" -eq 1 ]] || die "usage: boxkit host-open-uninstall"
+    uninstall_host_open
+    return
+  fi
   ROOT="$(project_dir)"
   HOST_HOME="$HOME"
   if [[ "$command" == _init ]]; then load_config; init_inside; return; fi
