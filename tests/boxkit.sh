@@ -157,7 +157,7 @@ grep -Fq -- 'apt-get install -y -qq bash bash-completion git curl ca-certificate
 grep -Fq -- 'dnf install -y bash bash-completion git curl ca-certificates openssh-clients sudo python3 "$@"' "$BOX_TEST_LOG"
 grep -Fq -- 'apk add --no-cache bash bash-completion git curl ca-certificates openssh-client sudo "$@"' "$BOX_TEST_LOG"
 # The preset Bash configuration enables bash-completion for interactive shells.
-grep -Fq -- '/usr/share/bash-completion/bash_completion' "$BOX_TEST_LOG"
+grep -Fq -- '/usr/share/bash-completion/bash_completion' box
 # A rootless container must permit setuid for sudo to elevate internally.
 ! grep -Fq -- '--security-opt=no-new-privileges' "$BOX_TEST_LOG"
 # The only passwordless sudo grant is for the container development user.
