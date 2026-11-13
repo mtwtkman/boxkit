@@ -85,6 +85,21 @@ Rootless Podman/crun may contact the host's systemd user manager while starting 
 
 This fix is separate from `dbus_session = true`, which controls access to the host session bus **inside** a container. If `$XDG_RUNTIME_DIR/bus` is missing, Boxkit leaves the inherited address unchanged; inspect `systemctl --user is-system-running`, `XDG_RUNTIME_DIR` and the session bus state if Podman still fails.
 
+## Terminal colors and host shell appearance
+
+On every `./box enter` and `./box exec`, Boxkit forwards the host's
+`TERM`, `COLORTERM`, `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE`, and
+`LS_COLORS` if set. This preserves terminal color capabilities and common
+color preferences when entering from foot/tmux or another terminal. These
+settings are passed at execution time rather than baked into the container,
+so changing tmux sessions does **not** require `./box enter -r`.
+
+The container must provide the terminfo definition named by `TERM` (for
+example, `infocmp tmux-256color`). Application-specific settings such as
+`FZF_DEFAULT_OPTS`, Neovim themes and the prompt remain under the
+container's shell/configuration management. `NO_COLOR=1` is forwarded
+intentionally: some applications disable color when it is set.
+
 ## Host integration
 
 - **SSH agent**: `SSH_AUTH_SOCK` is detected on the host, or override with `BOX_SSH_AGENT_SOCKET`. No private SSH key directories are mounted. Processes inside the container can request signatures from the agent, so only use this with trusted projects.
