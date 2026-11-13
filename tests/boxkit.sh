@@ -97,6 +97,12 @@ export BOX_TEST_STATUS="$tmp/container-status"
 export BOX_PROVISIONER=none
 ./box enter
 [[ -f .boxkit/state/initialized ]]
+# Every interactive entry must source .bashrc (bash -i, not login-only bash -l).
+grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
+grep -Fq -- ' /bin/bash /workspace/box _repair_bashrc' "$BOX_TEST_LOG"
+# The generated shell preset must not require the optional hostname executable.
+grep -Fq 'box_name="${CONTAINER_ID:-${HOSTNAME:-box}}"' box
+! grep -Fq 'box_name="${CONTAINER_ID:-$(hostname)}"' box
 # The Podman CLI must receive the canonical host session bus, not the stale value.
 grep -Fxq "unix:path=$tmp/runtime/bus" "$BOX_TEST_HOST_DBUS_LOG"
 ! grep -Fq "unix:path=$tmp/stale-session-bus" "$BOX_TEST_HOST_DBUS_LOG"
