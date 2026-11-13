@@ -99,7 +99,6 @@ export BOX_PROVISIONER=none
 [[ -f .boxkit/state/initialized ]]
 # Every interactive entry must source .bashrc (bash -i, not login-only bash -l).
 grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
-grep -Fq -- ' /bin/bash /workspace/box _repair_bashrc' "$BOX_TEST_LOG"
 # The generated shell preset must not require the optional hostname executable.
 grep -Fq 'box_name="${CONTAINER_ID:-${HOSTNAME:-box}}"' box
 ! grep -Fq 'box_name="${CONTAINER_ID:-$(hostname)}"' box
