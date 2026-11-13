@@ -49,7 +49,7 @@ mode = private
 # mount = ~/.config/nvim|/home/dev/.config/nvim|ro
 
 [packages]
-# additional = fd fzf git neovim ripgrep make gcc
+# additional = fd fzf git neovim ripgrep make gcc wl-clipboard
 
 [setup]
 # hook = echo 'Initial setup'
