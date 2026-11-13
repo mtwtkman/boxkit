@@ -207,6 +207,7 @@ make_container() {
     --userns=keep-id --user "$(id -u):$(id -g)"
     --workdir /workspace
     --env HOME=/home/dev
+    --env "BOXKIT_NAME=${BOXKIT_NAME:-$NAME}"
     --env XDG_CONFIG_HOME=/home/dev/.config
     --env XDG_CACHE_HOME=/home/dev/.cache
     --env XDG_DATA_HOME=/home/dev/.local/share
@@ -351,7 +352,7 @@ git_prompt=''
 if declare -F __git_ps1 >/dev/null 2>&1; then
   git_prompt='$(__git_ps1 " (%s)")'
 fi
-box_name="${CONTAINER_ID:-${HOSTNAME:-box}}"
+box_name="${BOXKIT_NAME:-${HOSTNAME:-box}}"
 PS1='\w'"$git_prompt"' -  : \[\e[33m\]'"$box_name"'\[\e[0m\]\n\$ '
 RC
 }
