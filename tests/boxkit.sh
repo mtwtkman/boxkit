@@ -99,6 +99,8 @@ export BOX_PROVISIONER=none
 [[ -f .boxkit/state/initialized ]]
 # Every interactive entry must source .bashrc (bash -i, not login-only bash -l).
 grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
+# Neovim and other subprocesses must inherit the same shell as the interactive entry.
+grep -Fq -- '--workdir /workspace --env SHELL=/bin/bash project-dev /bin/bash -i' "$BOX_TEST_LOG"
 grep -Fq 'box_name="${BOXKIT_NAME:-${HOSTNAME:-box}}"' box
 # The generated shell preset must not require the optional hostname executable.
 ! grep -Fq 'box_name="${CONTAINER_ID:-$(hostname)}"' box
@@ -107,6 +109,8 @@ grep -Fxq "unix:path=$tmp/runtime/bus" "$BOX_TEST_HOST_DBUS_LOG"
 ! grep -Fq "unix:path=$tmp/stale-session-bus" "$BOX_TEST_HOST_DBUS_LOG"
 grep -q 'create --name' "$BOX_TEST_LOG"
 grep -Fq -- '--env BOXKIT_NAME=project-dev' "$BOX_TEST_LOG"
+# Child processes launched by both 'enter' and 'exec' inherit this setting.
+grep -Fq -- '--env HOME=/home/dev --env SHELL=/bin/bash' "$BOX_TEST_LOG"
 
 grep -Fq -- '--hostname=haskell-dev' "$BOX_TEST_LOG"
 grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
