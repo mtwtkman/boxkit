@@ -74,6 +74,9 @@ case "${1:-}" in
   rm) rm -f "$BOX_TEST_ID" "$BOX_TEST_STATUS";;
   ps) echo 'NAMES STATUS IMAGE';;
   exec)
+    if [[ "$*" == *' /bin/sh -c '* && "$*" == *'xdg-open'* ]]; then
+      cat > "$BOX_TEST_CLIENT"
+    fi
     # Validate every shell payload exactly as Podman will pass it. Checking
     # only the outer boxkit Bash syntax misses errors inside -c strings.
     args=("$@")
@@ -100,6 +103,7 @@ MOCK_SYSTEMCTL
 chmod +x "$tmp/bin/systemctl"
 export BOX_TEST_SYSTEMCTL_LOG="$tmp/systemctl-log"
 chmod +x "$tmp/bin/podman"
+export BOX_TEST_CLIENT="$tmp/installed-xdg-open"
 export BOX_TEST_LOG="$tmp/podman-log"
 export BOX_TEST_HOST_DBUS_LOG="$tmp/podman-host-dbus-log"
 export BOX_TEST_ID="$tmp/container-id"
@@ -112,6 +116,8 @@ export CLICOLOR=1 CLICOLOR_FORCE=0 LS_COLORS='di=01;34'
 [[ -f "$HOME/.config/systemd/user/boxkit-open.service" ]]
 [[ -f "$HOME/.local/state/boxkit/host-open.manifest" ]]
 [[ -f .boxkit/state/initialized ]]
+[[ -f "$BOX_TEST_CLIENT" ]]
+grep -Fq "BOXKIT_OPEN_SOCKET" "$BOX_TEST_CLIENT"
 # Every interactive entry must source .bashrc (bash -i, not login-only bash -l).
 grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
 # Neovim and other subprocesses must inherit the same shell as the interactive entry.
