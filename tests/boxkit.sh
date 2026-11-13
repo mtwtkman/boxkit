@@ -137,8 +137,8 @@ grep -Fq -- 'fd fzf neovim ripgrep make gcc' "$BOX_TEST_LOG"
 # Synchronizing only (-Sy) causes OpenSSL SONAME conflicts in older images.
 grep -Fq -- 'pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh sudo python' "$BOX_TEST_LOG"
 # Sudo is installed with base prerequisites on supported images.
-grep -Fq -- 'openssh-client sudo "$@"' "$BOX_TEST_LOG"
-grep -Fq -- 'openssh-clients sudo "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'openssh-client sudo python3 "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'openssh-clients sudo python3 "$@"' "$BOX_TEST_LOG"
 # A rootless container must permit setuid for sudo to elevate internally.
 ! grep -Fq -- '--security-opt=no-new-privileges' "$BOX_TEST_LOG"
 # The only passwordless sudo grant is for the container development user.
