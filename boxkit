@@ -351,7 +351,7 @@ git_prompt=''
 if declare -F __git_ps1 >/dev/null 2>&1; then
   git_prompt='$(__git_ps1 " (%s)")'
 fi
-box_name="${CONTAINER_ID:-$(hostname)}"
+box_name="${CONTAINER_ID:-${HOSTNAME:-box}}"
 PS1='\w'"$git_prompt"' -  : \[\e[33m\]'"$box_name"'\[\e[0m\]\n\$ '
 RC
 }
@@ -434,7 +434,7 @@ main() {
       [[ "${2:-}" == -r ]] && recreate=true
       ensure_container "$recreate"
       initialize_if_needed
-      exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace "$NAME" /bin/bash -l
+      exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace "$NAME" /bin/bash -i
       ;;
     exec)
       shift
