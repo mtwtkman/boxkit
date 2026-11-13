@@ -252,6 +252,37 @@ sed -i 's/gpu = false/gpu = true/' boxkit.ini
 if ./box enter 2>/dev/null; then echo 'changed settings accepted without recreation' >&2; exit 1; fi
 sed -i 's/gpu = true/gpu = false/' boxkit.ini
 ./box enter -r
+# Host networking uses the host namespace without a publish mapping.
+sed -i 's/mode = private/mode = host/' boxkit.ini
+if ./box enter 2>/dev/null; then echo 'changed network mode accepted without recreation' >&2; exit 1; fi
+: > "$BOX_TEST_LOG"
+./box enter -r
+grep -Fq -- '--network host' "$BOX_TEST_LOG"
+! grep -Fq -- '--network none' "$BOX_TEST_LOG"
+! grep -Fq -- '-p 127.0.0.1:' "$BOX_TEST_LOG"
+# Port publishing is invalid with host networking.
+sed -i '/^mode = host$/a publish = 8080:8080' boxkit.ini
+if ./box list 2>/dev/null; then echo 'host network accepted publish mapping' >&2; exit 1; fi
+sed -i '/^publish = 8080:8080$/d' boxkit.ini
+# None mode must still reject port publishing.
+sed -i 's/mode = host/mode = none/' boxkit.ini
+sed -i '/^mode = none$/a publish = 8080:8080' boxkit.ini
+if ./box list 2>/dev/null; then echo 'none network accepted publish mapping' >&2; exit 1; fi
+sed -i '/^publish = 8080:8080$/d' boxkit.ini
+# Reject unknown network modes at configuration load.
+sed -i 's/mode = none/mode = invalid/' boxkit.ini
+if ./box list 2>/dev/null; then echo 'invalid network mode accepted' >&2; exit 1; fi
+sed -i 's/mode = invalid/mode = none/' boxkit.ini
+: > "$BOX_TEST_LOG"
+./box enter -r
+grep -Fq -- '--network none' "$BOX_TEST_LOG"
+# Private mode remains the default and accepts explicit loopback publishing.
+sed -i 's/mode = none/mode = private/' boxkit.ini
+sed -i '/^mode = private$/a publish = 8080:8080' boxkit.ini
+: > "$BOX_TEST_LOG"
+./box enter -r
+grep -Fq -- '-p 127.0.0.1:8080:8080' "$BOX_TEST_LOG"
+sed -i '/^publish = 8080:8080$/d' boxkit.ini
 grep -qx 'keep' .boxkit/home/preserved
 ./box rm
 [[ ! -f "$BOX_TEST_ID" ]]
