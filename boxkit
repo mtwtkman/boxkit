@@ -14,12 +14,8 @@ host_open_service_paths() {
   OPEN_UNIT="$HOME/.config/systemd/user/boxkit-open.service"
   OPEN_MARKER="$HOME/.local/state/boxkit/host-open.manifest"
 }
-install_host_open() {
-  host_open_service_paths
-  need systemctl
-  if [[ ! -e "$OPEN_BIN" && ! -L "$OPEN_BIN" && ! -e "$OPEN_UNIT" && ! -L "$OPEN_UNIT" ]]; then
-    mkdir -p -- "$(dirname "$OPEN_BIN")" "$(dirname "$OPEN_UNIT")" "$(dirname "$OPEN_MARKER")"
-    (umask 077; cat > "$OPEN_BIN" <<'BOXKIT_OPEN_SERVER'
+render_host_open_server() {
+  cat <<'BOXKIT_OPEN_SERVER'
 #!/usr/bin/env python3
 """Restricted host-side URL opener for Boxkit containers."""
 import json
@@ -126,7 +122,13 @@ def main():
 if __name__ == "__main__":
     main()
 BOXKIT_OPEN_SERVER
-    )
+}
+install_host_open() {
+  host_open_service_paths
+  need systemctl
+  if [[ ! -e "$OPEN_BIN" && ! -L "$OPEN_BIN" && ! -e "$OPEN_UNIT" && ! -L "$OPEN_UNIT" ]]; then
+    mkdir -p -- "$(dirname "$OPEN_BIN")" "$(dirname "$OPEN_UNIT")" "$(dirname "$OPEN_MARKER")"
+    (umask 077; render_host_open_server > "$OPEN_BIN")
     chmod 755 -- "$OPEN_BIN"
     cat > "$OPEN_UNIT" <<'BOXKIT_OPEN_UNIT'
 [Unit]
@@ -161,22 +163,8 @@ uninstall_host_open() {
   printf '%s\n' 'Removed Boxkit-managed host opener (shared by all boxes).'
 }
 
-# Install the container-side opener from the standalone Boxkit script.
-# Re-run on entry so already initialized containers also receive the client.
-install_host_open_client() {
-  [[ "$HOST_OPEN" == true ]] || return 0
-  podman exec -i --user "$(id -u):$(id -g)" "$NAME" /bin/sh -c '
-    set -eu
-    dest=/home/dev/.local/bin/xdg-open
-    mkdir -p /home/dev/.local/bin
-    tmp="$(mktemp /home/dev/.local/bin/.xdg-open.XXXXXX)"
-    trap '\''rm -f "$tmp"'\'' EXIT
-    cat > "$tmp"
-    if [ ! -f "$dest" ] || ! cmp -s "$tmp" "$dest"; then
-      mv -f "$tmp" "$dest"
-      chmod 755 "$dest"
-    fi
-  ' <<'BOXKIT_OPEN_CLIENT'
+render_host_open_client() {
+  cat <<'BOXKIT_OPEN_CLIENT'
 #!/bin/sh
 # Forward HTTP(S) and shared-file URIs to the host without host-spawn.
 set -eu
@@ -230,6 +218,24 @@ for arg in sys.argv[1:]:
         sys.exit(f"xdg-open: {exc}")
 PY
 BOXKIT_OPEN_CLIENT
+}
+
+# Install the container-side opener from the standalone Boxkit script.
+# Re-run on entry so already initialized containers also receive the client.
+install_host_open_client() {
+  [[ "$HOST_OPEN" == true ]] || return 0
+  render_host_open_client | podman exec -i --user "$(id -u):$(id -g)" "$NAME" /bin/sh -c '
+    set -eu
+    dest=/home/dev/.local/bin/xdg-open
+    mkdir -p /home/dev/.local/bin
+    tmp="$(mktemp /home/dev/.local/bin/.xdg-open.XXXXXX)"
+    trap '\''rm -f "$tmp"'\'' EXIT
+    cat > "$tmp"
+    if [ ! -f "$dest" ] || ! cmp -s "$tmp" "$dest"; then
+      mv -f "$tmp" "$dest"
+      chmod 755 "$dest"
+    fi
+  '
 }
 
 usage() {
