@@ -23,6 +23,7 @@ mode = private
 [mounts]
 # mount = ./data|/data|rw
 # mount = ~/.config/nvim|/home/dev/.config/nvim|ro
+# mount = ${XDG_RUNTIME_DIR}/pulse|/run/host-pulse|ro
 
 [packages]
 additional = fd fzf neovim ripgrep make gcc
@@ -41,6 +42,6 @@ The optional `[packages] additional` key accepts whitespace-separated package na
 
 `[engine_args] create_arg` may be repeated; each entry is **one Podman create CLI argument**, e.g. `--hostname=haskell-dev`, `--env=FOO=bar`, `--cap-add=NET_ADMIN`. Use `--option=value` syntax for options with values; whitespace-separated CLI fragments are deliberately not parsed, sourced, or evaluated. These are **Podman-specific** escape-hatch flags and may override isolation assumptions; use built-in integration/mount/network keys when available. Changing them requires explicit `./box enter -r`.
 
-Repeated `publish` and `mount` entries are accepted. Network publishes are bound to host loopback (127.0.0.1). `network.mode = none` disables the network and disallows publishes. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Settings are parsed as data and never sourced as shell.
+Repeated `publish` and `mount` entries are accepted. Network publishes are bound to host loopback (127.0.0.1). `network.mode = none` disables the network and disallows publishes. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Mount sources support the host environment variables `$HOME`, `${HOME}`, `$XDG_RUNTIME_DIR`, and `${XDG_RUNTIME_DIR}` (and the existing `~` syntax). Only these names are expanded; no shell commands or arbitrary variables are evaluated. If `XDG_RUNTIME_DIR` is referenced but unset or empty, Boxkit fails with an explicit error. Changing mounts requires `./box enter -r`. Settings are parsed as data and never sourced as shell.
 
 The default image is Arch Linux (`docker.io/library/archlinux:latest`). The first entry installs basic development prerequisites (bash, git, curl, SSH client, certificate bundle, and sudo) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
