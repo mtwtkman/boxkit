@@ -151,10 +151,13 @@ grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
 grep -Fq -- 'fd fzf neovim ripgrep make gcc' "$BOX_TEST_LOG"
 # The Arch bootstrap must fully upgrade before installing new packages.
 # Synchronizing only (-Sy) causes OpenSSL SONAME conflicts in older images.
-grep -Fq -- 'pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh sudo python' "$BOX_TEST_LOG"
+grep -Fq -- 'pacman -Syu --noconfirm --needed bash bash-completion git curl ca-certificates openssh sudo python' "$BOX_TEST_LOG"
 # Sudo is installed with base prerequisites on supported images.
-grep -Fq -- 'openssh-client sudo python3 "$@"' "$BOX_TEST_LOG"
-grep -Fq -- 'openssh-clients sudo python3 "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'apt-get install -y -qq bash bash-completion git curl ca-certificates openssh-client sudo python3 "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'dnf install -y bash bash-completion git curl ca-certificates openssh-clients sudo python3 "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'apk add --no-cache bash bash-completion git curl ca-certificates openssh-client sudo "$@"' "$BOX_TEST_LOG"
+# The preset Bash configuration enables bash-completion for interactive shells.
+grep -Fq -- '/usr/share/bash-completion/bash_completion' "$BOX_TEST_LOG"
 # A rootless container must permit setuid for sudo to elevate internally.
 ! grep -Fq -- '--security-opt=no-new-privileges' "$BOX_TEST_LOG"
 # The only passwordless sudo grant is for the container development user.
