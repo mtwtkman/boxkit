@@ -69,7 +69,15 @@ The optional `[packages] additional` key accepts whitespace-separated package na
 
 Repeated `publish` and `mount` entries are accepted. Network publishes are bound to host loopback (127.0.0.1). `network.mode = none` disables the network and disallows publishes. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Settings are parsed as data and never sourced as shell.
 
-The default image is Arch Linux (`docker.io/library/archlinux:latest`). The first entry installs basic development prerequisites (bash, git, curl, SSH client and certificate bundle) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
+The default image is Arch Linux (`docker.io/library/archlinux:latest`). The first entry installs basic development prerequisites (bash, git, curl, SSH client, certificate bundle, and sudo) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
+
+## Sudo inside rootless containers
+
+On initial provisioning, Boxkit installs `sudo` and configures passwordless sudo **only for the mapped development user**. For example, `sudo pacman -Syu gh` works from an ordinary `./box enter` session. The `box_setup.sh` hook continues to run as the development user; use `sudo` there when root privileges are needed.
+
+Rootless Podman remains enabled (`--userns=keep-id`): container root is not host root. However, sudo requires setuid transitions, so Boxkit does **not** set `no-new-privileges` for newly created containers. This slightly weakens containment against privilege escalation *within the container*; do not run untrusted code or mount sensitive host resources writable. The passwordless rule is container-local, and the normal host user does not acquire host sudo rights.
+
+An existing initialized container is not re-provisioned by updating `./box` alone. To enable sudo, recreate with `./box enter -r` after backing up any changes stored exclusively in the container writable layer. The project HOME is preserved.
 
 ## Host session D-Bus for Podman
 
