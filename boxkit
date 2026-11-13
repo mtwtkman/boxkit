@@ -781,30 +781,7 @@ main() {
         esac
       done
       if [[ "$workdir_provided" == true ]]; then
-        [[ "$requested_workdir" == /* && "$requested_workdir" != *
-    exec)
-      shift
-      [[ "$#" -gt 0 ]] || die "usage: ./box exec COMMAND..."
-      container_running || die "container not running; use ./box enter"
-      local -a tty_opts=(-i)
-      if [[ -t 0 && -t 1 ]]; then tty_opts+=(-t); fi
-      terminal_env_args
-      exec podman exec "${tty_opts[@]}" --user "$(id -u):$(id -g)" "${TERMINAL_ENV_ARGS[@]}" "$NAME" "$@"
-      ;;
-    stop|s)
-      if [[ -n "$(container_id)" ]] && container_running; then podman stop "$NAME"; fi
-      ;;
-    rm)
-      if [[ -n "$(container_id)" ]]; then podman rm -f "$NAME"; fi
-      ;;
-    list|ls)
-      podman ps -a --filter label=io.boxkit.managed=true --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
-      ;;
-    *) die "unknown command $command";;
-  esac
-}
-main "$@"
-\n'* ]] || die '--workdir requires an absolute path'
+        [[ "$requested_workdir" == /* ]] || die '--workdir requires an absolute path'
       fi
       ensure_container "$recreate"
       initialize_if_needed
