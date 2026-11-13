@@ -1,0 +1,10 @@
+[Unit]
+Description=Boxkit restricted host URL opener
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/bin/boxkit-open-server
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

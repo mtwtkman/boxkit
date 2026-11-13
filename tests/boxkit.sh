@@ -14,6 +14,7 @@ bash -n box
 grep -q '^engine = podman$' boxkit.ini
 grep -q '^image = docker.io/library/archlinux:latest$' boxkit.ini
 grep -q '^dbus_session = true$' boxkit.ini
+grep -q '^host_open = false$' boxkit.ini
 [[ ! -e Containerfile ]]
 if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
 mkdir -p .boxkit/home
@@ -22,6 +23,7 @@ echo 'invalid_setting = true' >> boxkit.ini
 if bash ./box list 2>/dev/null; then echo 'invalid INI accepted' >&2; exit 1; fi
 sed -i '/invalid_setting = true/d' boxkit.ini
 sed -i 's/wayland = true/wayland = false/' boxkit.ini
+sed -i 's/host_open = false/host_open = true/' boxkit.ini
 cat >> boxkit.ini <<'CONFIG'
 
 [packages]
@@ -46,6 +48,7 @@ for attempt in {1..60}; do
 done
 [[ -S "$tmp/runtime/bus" ]]
 export XDG_RUNTIME_DIR="$tmp/runtime"
+mkdir -p "$tmp/runtime/boxkit-open"
 # Host address is intentionally different: container must never inherit it.
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$tmp/stale-session-bus"
 
@@ -132,10 +135,10 @@ grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
 grep -Fq -- 'fd fzf neovim ripgrep make gcc' "$BOX_TEST_LOG"
 # The Arch bootstrap must fully upgrade before installing new packages.
 # Synchronizing only (-Sy) causes OpenSSL SONAME conflicts in older images.
-grep -Fq -- 'pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh sudo' "$BOX_TEST_LOG"
+grep -Fq -- 'pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh sudo python' "$BOX_TEST_LOG"
 # Sudo is installed with base prerequisites on supported images.
-grep -Fq -- 'openssh-client sudo "$@"' "$BOX_TEST_LOG"
-grep -Fq -- 'openssh-clients sudo "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'openssh-client sudo python3 "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'openssh-clients sudo python3 "$@"' "$BOX_TEST_LOG"
 # A rootless container must permit setuid for sudo to elevate internally.
 ! grep -Fq -- '--security-opt=no-new-privileges' "$BOX_TEST_LOG"
 # The only passwordless sudo grant is for the container development user.
@@ -151,6 +154,8 @@ grep -q 'docker.io/library/archlinux:latest' "$BOX_TEST_LOG"
 grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
 grep -Fq -- "src=$tmp/runtime/bus,dst=/home/dev/.boxkit-runtime/bus" "$BOX_TEST_LOG"
 grep -Fq -- '--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/boxkit-open,dst=/home/dev/.boxkit-runtime/open,readonly" "$BOX_TEST_LOG"
+grep -Fq -- '--env BOXKIT_OPEN_SOCKET=/home/dev/.boxkit-runtime/open/xdg-open.sock' "$BOX_TEST_LOG"
 grep -q -- '--userns=keep-id' "$BOX_TEST_LOG"
 grep -q -- '--mount type=bind,src=' "$BOX_TEST_LOG"
 grep -q ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG"

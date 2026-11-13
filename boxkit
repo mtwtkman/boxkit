@@ -38,6 +38,7 @@ home = .boxkit/home
 ssh_agent = true
 wayland = true
 dbus_session = true
+host_open = false
 gpu = false
 
 [network]
@@ -65,7 +66,7 @@ EOF
   printf 'Created %s/boxkit.ini and %s/box\n' "$dst" "$dst"
 }
 NAME='' ENGINE=podman IMAGE='' HOME_PATH=.boxkit/home
-SSH_AGENT=true WAYLAND=true DBUS_SESSION=true GPU=false NETWORK=private
+SSH_AGENT=true WAYLAND=true DBUS_SESSION=true HOST_OPEN=false GPU=false NETWORK=private
 declare -a MOUNTS=() PORTS=() PACKAGES=() HOOKS=() CREATE_ARGS=()
 load_config() {
   local file="$ROOT/boxkit.ini" section='' line key value
@@ -85,6 +86,7 @@ load_config() {
       integration.ssh_agent) SSH_AGENT="$value";;
       integration.wayland) WAYLAND="$value";;
       integration.dbus_session) DBUS_SESSION="$value";;
+      integration.host_open) HOST_OPEN="$value";;
       integration.gpu) GPU="$value";;
       network.mode) NETWORK="$value";;
       network.publish) PORTS+=("$value");;
@@ -106,7 +108,7 @@ load_config() {
   [[ "$NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || die "invalid container name"
   [[ -n "$IMAGE" ]] || die "container.image required"
   [[ "$ENGINE" == podman ]] || die "engine '$ENGINE' not supported yet (currently: podman)"
-  valid_bool "$SSH_AGENT"; valid_bool "$WAYLAND"; valid_bool "$DBUS_SESSION"; valid_bool "$GPU"
+  valid_bool "$SSH_AGENT"; valid_bool "$WAYLAND"; valid_bool "$DBUS_SESSION"; valid_bool "$HOST_OPEN"; valid_bool "$GPU"
   local pkg
   for pkg in "${PACKAGES[@]}"; do
     [[ "$pkg" =~ ^[a-zA-Z0-9][a-zA-Z0-9.+_@:-]*$ ]] || die "invalid package name: $pkg"
@@ -152,7 +154,14 @@ normalize_host_session_bus() {
 }
 detect_integrations() {
   local socket='' wd='' rt=''
-  AGENT_SOCKET='' WAYLAND_SOCKET='' DBUS_SOCKET=''
+  AGENT_SOCKET='' WAYLAND_SOCKET='' DBUS_SOCKET='' OPEN_DIRECTORY=''
+  if [[ "$HOST_OPEN" == true ]]; then
+    [[ -n "${XDG_RUNTIME_DIR:-}" ]] || die 'host_open requires XDG_RUNTIME_DIR'
+    OPEN_DIRECTORY="$XDG_RUNTIME_DIR/boxkit-open"
+    mkdir -p -- "$OPEN_DIRECTORY"
+    chmod 700 -- "$OPEN_DIRECTORY"
+    [[ -S "$OPEN_DIRECTORY/xdg-open.sock" ]] || warn 'host opener not running; start boxkit-open.service on the host'
+  fi
   if [[ "$SSH_AGENT" == true ]]; then
     socket="${BOX_SSH_AGENT_SOCKET:-${SSH_AUTH_SOCK:-}}"
     if [[ -n "$socket" && -S "$socket" ]]; then
@@ -187,7 +196,7 @@ detect_integrations() {
 fingerprint() {
   local path
   { cat "$ROOT/boxkit.ini"
-    printf '\n%s\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET"
+    printf '\n%s\n%s\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET" "$OPEN_DIRECTORY"
     for path in "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET"; do
       if [[ -n "$path" ]]; then stat -Lc '%d:%i' -- "$path"; fi
     done
@@ -225,6 +234,12 @@ make_container() {
     [[ "$port" =~ ^[0-9]+:[0-9]+$ ]] || die "publish must be host-port:container-port"
     args+=(-p "127.0.0.1:$port")
   done
+  if [[ -n "$OPEN_DIRECTORY" ]]; then
+    args+=(--mount "type=bind,src=$OPEN_DIRECTORY,dst=/home/dev/.boxkit-runtime/open,readonly"
+           --env BOXKIT_OPEN_SOCKET=/home/dev/.boxkit-runtime/open/xdg-open.sock
+           --env "BOXKIT_HOST_WORKSPACE=$ROOT"
+           --env "BOXKIT_HOST_HOME=$LOCAL_HOME")
+  fi
   if [[ -n "$AGENT_SOCKET" ]]; then
     args+=(--mount "type=bind,src=$AGENT_SOCKET,dst=/home/dev/.boxkit-runtime/ssh-agent.sock,rw"
            --env SSH_AUTH_SOCK=/home/dev/.boxkit-runtime/ssh-agent.sock)
@@ -278,15 +293,15 @@ bootstrap_packages() {
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq bash git curl ca-certificates openssh-client sudo "$@"
+  apt-get install -y -qq bash git curl ca-certificates openssh-client sudo python3 "$@"
 elif command -v apk >/dev/null 2>&1; then
   apk add --no-cache bash git curl ca-certificates openssh-client sudo "$@"
 elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y bash git curl ca-certificates openssh-clients sudo "$@"
+  dnf install -y bash git curl ca-certificates openssh-clients sudo python3 "$@"
 elif command -v pacman >/dev/null 2>&1; then
   # Synchronize the whole Arch system before installing packages; -Sy alone
   # creates unsupported partial upgrades against an older image.
-  pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh sudo "$@"
+  pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh sudo python "$@"
 else
   echo "Unsupported image package manager; supply bash git curl and ssh manually" >&2
   exit 1
