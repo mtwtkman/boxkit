@@ -353,6 +353,14 @@ load_config() {
 }
 resolve_source() {
   local x="$1"
+  # Expand only documented host path variables; never evaluate shell code.
+  if [[ "$x" == *'${XDG_RUNTIME_DIR}'* || "$x" == *'$XDG_RUNTIME_DIR'* ]]; then
+    [[ -n "${XDG_RUNTIME_DIR:-}" ]] || die 'mount source requires XDG_RUNTIME_DIR on the host'
+    x="${x//\$\{XDG_RUNTIME_DIR\}/$XDG_RUNTIME_DIR}"
+    x="${x//\$XDG_RUNTIME_DIR/$XDG_RUNTIME_DIR}"
+  fi
+  x="${x//\$\{HOME\}/$HOST_HOME}"
+  x="${x//\$HOME/$HOST_HOME}"
   case "$x" in
     '~') x="$HOST_HOME";;
     '~/'*) x="$HOST_HOME/${x:2}";;
