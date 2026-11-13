@@ -1,29 +1,52 @@
 #!/bin/sh
-# OCI-independent host URL bridge; only HTTP(S) is accepted.
+# Forward HTTP(S) and shared-file URIs to the host without host-spawn.
 set -eu
 [ "$#" -gt 0 ] || { echo 'xdg-open: missing URL' >&2; exit 2; }
 exec python3 - "$@" <<'PY'
-import json, os, socket, sys
-path = os.environ.get("BOXKIT_OPEN_SOCKET", "/home/dev/.boxkit-runtime/open/xdg-open.sock")
-for url in sys.argv[1:]:
-    if not url.lower().startswith(("https://", "http://")):
-        sys.exit("xdg-open: only http(s) URLs are supported")
-    payload = (json.dumps({"url": url}) + "\n").encode()
-    if len(payload) > 65536:
-        sys.exit("xdg-open: URL too long")
+import json
+import os
+from pathlib import Path
+import socket
+import sys
+from urllib.parse import quote, unquote, urlsplit
+
+socket_path = os.environ.get("BOXKIT_OPEN_SOCKET", "/home/dev/.boxkit-runtime/open/xdg-open.sock")
+
+def translate(argument):
+    parsed = urlsplit(argument)
+    if parsed.scheme.lower() in ("http", "https"):
+        return argument
+    if parsed.scheme.lower() != "file" or parsed.netloc not in ("", "localhost") or parsed.query or parsed.fragment:
+        raise ValueError("only http(s) and local file:// URIs are supported")
+    path = Path(unquote(parsed.path))
+    if not path.is_absolute():
+        raise ValueError("file URI must be absolute")
+    for container_root, key in (("/workspace", "BOXKIT_HOST_WORKSPACE"), ("/home/dev", "BOXKIT_HOST_HOME")):
+        host_root = os.environ.get(key)
+        if host_root and (path == Path(container_root) or Path(container_root) in path.parents):
+            mapped = Path(host_root) / path.relative_to(container_root)
+            return mapped.as_uri()
+    raise ValueError("file URI is outside Boxkit shared workspace/HOME")
+
+for arg in sys.argv[1:]:
     try:
-        with socket.socket(socket.AF_UNIX) as sock:
+        url = translate(arg)
+        payload = (json.dumps({"url": url}) + "\n").encode()
+        if len(payload) > 65536:
+            raise ValueError("URL too long")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.settimeout(10)
-            sock.connect(path)
+            sock.connect(socket_path)
             sock.sendall(payload)
             response = b""
             while not response.endswith(b"\n") and len(response) < 4096:
-                chunk = sock.recv(4096)
-                if not chunk: break
-                response += chunk
+                part = sock.recv(4096)
+                if not part:
+                    break
+                response += part
         result = json.loads(response)
         if not result.get("ok"):
-            sys.exit("xdg-open: " + result.get("error", "host rejected URL"))
+            raise ValueError(result.get("error", "host rejected URL"))
     except (OSError, ValueError) as exc:
-        sys.exit(f"xdg-open: host bridge unavailable: {exc}")
+        sys.exit(f"xdg-open: {exc}")
 PY
