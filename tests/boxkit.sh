@@ -117,7 +117,16 @@ grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
 grep -Fq -- 'fd fzf neovim ripgrep make gcc' "$BOX_TEST_LOG"
 # The Arch bootstrap must fully upgrade before installing new packages.
 # Synchronizing only (-Sy) causes OpenSSL SONAME conflicts in older images.
-grep -Fq -- 'pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh' "$BOX_TEST_LOG"
+grep -Fq -- 'pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh sudo' "$BOX_TEST_LOG"
+# Sudo is installed with base prerequisites on supported images.
+grep -Fq -- 'openssh-client sudo "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'openssh-clients sudo "$@"' "$BOX_TEST_LOG"
+# A rootless container must permit setuid for sudo to elevate internally.
+! grep -Fq -- '--security-opt=no-new-privileges' "$BOX_TEST_LOG"
+# The only passwordless sudo grant is for the container development user.
+grep -Fq -- ' /etc/sudoers.d/boxkit' "$BOX_TEST_LOG"
+grep -Fq -- 'NOPASSWD: ALL' "$BOX_TEST_LOG"
+grep -Fq -- 'chmod 0440 /etc/sudoers.d/boxkit' "$BOX_TEST_LOG"
 if grep -Eq 'pacman -Sy( |$)' "$BOX_TEST_LOG"; then
   echo 'FAIL: Arch bootstrap performs a partial upgrade' >&2
   exit 1
