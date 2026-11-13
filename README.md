@@ -111,6 +111,42 @@ intentionally: some applications disable color when it is set.
 
 Boxkit records a fingerprint including the configuration and SSH-agent, Wayland, and D-Bus socket inode identities. If the agent, Wayland or D-Bus socket is replaced, `enter` refuses the old mount and tells you to run `./box enter -r`. Recreating a running container is never automatic. A missing SSH agent or D-Bus session socket is allowed with a warning, but changing its availability requires explicit recreation. This is particularly relevant after a host logout/login or session bus restart.
 
+
+## OCI-independent host browser bridge
+
+The optional `[integration] host_open = true` mounts a dedicated Unix-socket
+directory into the container. It does **not** expose Podman control or host
+shell execution. Only absolute HTTP(S) URLs are accepted. It works with
+`dbus_session = false`, because the host listener runs in the host session.
+
+Install the host listener and user service on the Linux host:
+
+```sh
+install -Dm755 host/boxkit-open-server ~/.local/bin/boxkit-open-server
+install -Dm644 host/boxkit-open.service ~/.config/systemd/user/boxkit-open.service
+systemctl --user daemon-reload
+systemctl --user enable --now boxkit-open.service
+```
+
+Set `host_open = true` under `[integration]` in `boxkit.ini`.
+Copy `localbin/xdg-open` into the container's PATH (for example, through
+Mi's managed localbin), then recreate the container using `./box enter -r`.
+The container needs Python 3, installed by the standard Boxkit bootstrap.
+Try `xdg-open https://example.com` from inside the container.
+
+The socket lives at `$XDG_RUNTIME_DIR/boxkit-open/xdg-open.sock` on the
+host and `/home/dev/.boxkit-runtime/open/xdg-open.sock` in the container.
+The directory is mounted rather than the socket inode, so service restarts
+do not require container recreation. A compromised container with this
+integration enabled can request arbitrary HTTP(S) URLs in the host browser;
+do not enable it for untrusted workloads. Local file paths and custom URI
+schemes are intentionally unsupported.
+
+The host listener inherits its user service environment and attempts to
+recover the active sway/Firefox session D-Bus address from host processes.
+If the session uses a different browser, set `BROWSER` and optionally
+`DESKTOPAPP` in the user service environment.
+
 ## Initial provisioning
 
 On first entry, Boxkit prompts for Mi; specify `BOX_PROVISIONER=mi` or `BOX_PROVISIONER=none` in noninteractive use. Mi uses `MI_PROFILE=container`. A trusted, project-local `box_setup.sh` runs inside the container, after Mi, as a Bash subprocess from `/workspace`. It does not have to be executable. Set `MI_REPO_PATH` to a checkout path **visible inside the container**, e.g. `/workspace/mi`. `BOX_MI_SETUP_URL` can override the setup script URL.
