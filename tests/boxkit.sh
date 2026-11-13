@@ -16,6 +16,10 @@ grep -q '^image = docker.io/library/archlinux:latest$' boxkit.ini
 grep -q '^dbus_session = true$' boxkit.ini
 grep -q '^audio = true$' boxkit.ini
 grep -q '^host_open = false$' boxkit.ini
+# Verify that the generated INI describes every supported setting.
+for setting in 'name =' 'engine =' 'image =' 'home =' 'ssh_agent =' 'wayland =' 'dbus_session =' 'audio =' 'host_open =' 'gpu =' 'mode =' 'publish =' 'mount =' 'additional =' 'hook =' 'create_arg ='; do
+  grep -Fq -- "$setting" boxkit.ini || { echo "missing template setting $setting" >&2; exit 1; }
+done
 [[ ! -e Containerfile ]]
 if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
 mkdir -p .boxkit/home
@@ -165,7 +169,7 @@ grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
 grep -Fq -- 'fd fzf neovim ripgrep make gcc' "$BOX_TEST_LOG"
 # The Arch bootstrap must fully upgrade before installing new packages.
 # Synchronizing only (-Sy) causes OpenSSL SONAME conflicts in older images.
-grep -Fq -- 'pacman -Syu --noconfirm --needed bash bash-completion git curl ca-certificates openssh sudo python' "$BOX_TEST_LOG"
+grep -Fq -- 'pacman -Syu --noconfirm --needed bash bash-completion git curl ca-certificates openssh sudo python libnotify libpulse' "$BOX_TEST_LOG"
 # Sudo is installed with base prerequisites on supported images.
 grep -Fq -- 'apt-get install -y -qq bash bash-completion git curl ca-certificates openssh-client sudo python3 "$@"' "$BOX_TEST_LOG"
 grep -Fq -- 'dnf install -y bash bash-completion git curl ca-certificates openssh-clients sudo python3 "$@"' "$BOX_TEST_LOG"

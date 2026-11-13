@@ -4,35 +4,53 @@
 
 ```ini
 [container]
+# Unique Podman container name.
 name = example-dev
+# Container engine (only podman is supported).
 engine = podman
+# OCI image used to create the container.
 image = docker.io/library/archlinux:latest
+# Persistent container HOME, relative to the project; kept on recreation.
 home = .boxkit/home
 
 [integration]
+# Forward host SSH agent; permits signing with agent-held credentials.
 ssh_agent = true
+# Share host Wayland socket for GUI applications.
 wayland = true
+# Share host D-Bus session (including mako notifications).
 dbus_session = true
+# Share host PulseAudio/pipewire-pulse socket; may allow microphone capture.
 audio = true
+# Host browser/xdg-open bridge; disabled unless explicitly enabled.
 host_open = false
+# Share /dev/dri GPU devices.
 gpu = false
 
 [network]
+# private = container networking; none = no network.
 mode = private
+# Publish host-loopback port to container port; repeat if needed.
 # publish = 8080:8080
 
 [mounts]
+# Host source|container destination|ro-or-rw; repeat if needed.
+# Sources: project-relative, ~, $HOME or $XDG_RUNTIME_DIR.
 # mount = ./data|/data|rw
 # mount = ~/.config/nvim|/home/dev/.config/nvim|ro
-# mount = ${XDG_RUNTIME_DIR}/pulse|/run/host-pulse|ro
 
 [packages]
-additional = fd fzf neovim ripgrep make gcc
+# Additional packages installed at first initialization/recreation.
+# Arch bootstrap already installs libnotify and libpulse clients.
+additional = wl-clipboard fd fzf git neovim ripgrep make gcc
 
 [setup]
-# hook = echo "Initial setup"
+# Optional shell hook as container user at first initialization; repeatable.
+# Each hook runs separately before box_setup.sh.
+# hook = echo 'Initial setup'
 
 [engine_args]
+# Optional one-token Podman create flags; repeat as --option=value.
 # create_arg = --hostname=haskell-dev
 # create_arg = --env=EXAMPLE=value
 ```
@@ -48,3 +66,6 @@ The optional `[packages] additional` key accepts whitespace-separated package na
 Repeated `publish` and `mount` entries are accepted. Network publishes are bound to host loopback (127.0.0.1). `network.mode = none` disables the network and disallows publishes. The project's directory is mounted read/write at `/workspace`, and the independent HOME is mounted at `/home/dev`. Source paths are resolved on the host relative to the project; do not mount untrusted host paths. Mount sources support the host environment variables `$HOME`, `${HOME}`, `$XDG_RUNTIME_DIR`, and `${XDG_RUNTIME_DIR}` (and the existing `~` syntax). Only these names are expanded; no shell commands or arbitrary variables are evaluated. If `XDG_RUNTIME_DIR` is referenced but unset or empty, Boxkit fails with an explicit error. Changing mounts requires `./box enter -r`. Settings are parsed as data and never sourced as shell.
 
 The default image is Arch Linux (`docker.io/library/archlinux:latest`). The first entry installs basic development prerequisites (bash, git, curl, SSH client, certificate bundle, and sudo) using the image's package manager. Arch, Debian/Ubuntu, Alpine and Fedora-like package managers are supported; unsupported images need a supported package manager or customized preparation. `./box enter` requires network access for initial packages and Mi unless packages are already cached.
+
+
+On Arch Linux, the baseline bootstrap installs `libnotify` (`notify-send`) and `libpulse` (`pactl` / `paplay`) whether or not their host integrations are enabled. The host services themselves (mako and PipeWire/PulseAudio) are not installed in the container. Event sound themes and `canberra-gtk-play` remain optional. Other distributions retain the existing bootstrap behavior.

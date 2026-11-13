@@ -260,34 +260,53 @@ create_default() {
   name="$(basename "$dst")-dev"
   cat > "$dst/boxkit.ini" <<EOF
 [container]
+# Unique Podman container name.
 name = $name
+# Container engine (only podman is supported).
 engine = podman
+# OCI image used to create the container.
 image = docker.io/library/archlinux:latest
+# Persistent container HOME, relative to the project; kept on recreation.
 home = .boxkit/home
 
 [integration]
+# Forward host SSH agent; permits signing with agent-held credentials.
 ssh_agent = true
+# Share host Wayland socket for GUI applications.
 wayland = true
+# Share host D-Bus session (including mako notifications).
 dbus_session = true
+# Share host PulseAudio/pipewire-pulse socket; may allow microphone capture.
 audio = true
+# Host browser/xdg-open bridge; disabled unless explicitly enabled.
 host_open = false
+# Share /dev/dri GPU devices.
 gpu = false
 
 [network]
+# private = container networking; none = no network.
 mode = private
+# Publish host-loopback port to container port; repeat if needed.
 # publish = 8080:8080
 
 [mounts]
+# Host source|container destination|ro-or-rw; repeat if needed.
+# Sources: project-relative, ~, \$HOME or \$XDG_RUNTIME_DIR.
 # mount = ./data|/data|rw
 # mount = ~/.config/nvim|/home/dev/.config/nvim|ro
 
 [packages]
+# Additional packages installed at first initialization/recreation.
+# Arch bootstrap already installs libnotify and libpulse clients.
 additional = wl-clipboard fd fzf git neovim ripgrep make gcc
 
 [setup]
+# Optional shell hook as container user at first initialization; repeatable.
+# Each hook runs separately before box_setup.sh.
 # hook = echo 'Initial setup'
 
 [engine_args]
+# Optional one-token Podman create flags; repeat as --option=value.
 # create_arg = --hostname=haskell-dev
 # create_arg = --env=EXAMPLE=value
 EOF
@@ -556,7 +575,7 @@ elif command -v dnf >/dev/null 2>&1; then
 elif command -v pacman >/dev/null 2>&1; then
   # Synchronize the whole Arch system before installing packages; -Sy alone
   # creates unsupported partial upgrades against an older image.
-  pacman -Syu --noconfirm --needed bash bash-completion git curl ca-certificates openssh sudo python "$@"
+  pacman -Syu --noconfirm --needed bash bash-completion git curl ca-certificates openssh sudo python libnotify libpulse "$@"
 else
   echo "Unsupported image package manager; supply bash git curl and ssh manually" >&2
   exit 1
