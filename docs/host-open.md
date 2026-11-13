@@ -13,8 +13,10 @@ already exist, it preserves them without overwriting. A partially installed
 service is treated as an error rather than overwritten.
 
 Set `host_open = true` under `[integration]` in `boxkit.ini`.
-Copy `localbin/xdg-open` into the container's PATH (for example, through
-Mi's managed localbin), then recreate the container using `./box enter -r`.
+On `./box enter`, Boxkit automatically installs the embedded `xdg-open` client
+into `/home/dev/.local/bin` inside the container, including containers that
+were initialized previously. The generated shell preset adds this directory
+to `PATH`. No separate `localbin/` checkout or container recreation is needed.
 The container needs Python 3, installed by the standard Boxkit bootstrap.
 Try `xdg-open https://example.com` or `xdg-open file:///workspace/README.md` from inside the container.
 
