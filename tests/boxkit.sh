@@ -92,6 +92,13 @@ case "${1:-}" in
     ;;
 esac
 MOCK
+cat > "$tmp/bin/systemctl" <<'MOCK_SYSTEMCTL'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$BOX_TEST_SYSTEMCTL_LOG"
+MOCK_SYSTEMCTL
+chmod +x "$tmp/bin/systemctl"
+export BOX_TEST_SYSTEMCTL_LOG="$tmp/systemctl-log"
 chmod +x "$tmp/bin/podman"
 export BOX_TEST_LOG="$tmp/podman-log"
 export BOX_TEST_HOST_DBUS_LOG="$tmp/podman-host-dbus-log"
@@ -101,6 +108,9 @@ export BOX_PROVISIONER=none
 export TERM=tmux-256color COLORTERM=truecolor NO_COLOR=1
 export CLICOLOR=1 CLICOLOR_FORCE=0 LS_COLORS='di=01;34'
 ./box enter
+[[ -f "$HOME/.local/bin/boxkit-open-server" ]]
+[[ -f "$HOME/.config/systemd/user/boxkit-open.service" ]]
+[[ -f "$HOME/.local/state/boxkit/host-open.manifest" ]]
 [[ -f .boxkit/state/initialized ]]
 # Every interactive entry must source .bashrc (bash -i, not login-only bash -l).
 grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
@@ -194,3 +204,13 @@ grep -qx 'keep' .boxkit/home/preserved
 [[ ! -f "$BOX_TEST_ID" ]]
 grep -qx 'keep' .boxkit/home/preserved
 echo 'Boxkit regression tests passed'
+
+# Existing installation must be preserved, not reinstalled.
+before="$(sha256sum "$HOME/.local/bin/boxkit-open-server")"
+./box enter
+[[ "$(sha256sum "$HOME/.local/bin/boxkit-open-server")" == "$before" ]]
+[[ "$(grep -c 'enable --now boxkit-open.service' "$BOX_TEST_SYSTEMCTL_LOG")" == 1 ]]
+./box host-open-uninstall
+[[ ! -e "$HOME/.local/bin/boxkit-open-server" ]]
+[[ ! -e "$HOME/.config/systemd/user/boxkit-open.service" ]]
+[[ ! -e "$HOME/.local/state/boxkit/host-open.manifest" ]]
