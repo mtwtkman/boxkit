@@ -291,7 +291,7 @@ mode = private
 
 [mounts]
 # Host source|container destination|ro-or-rw; repeat if needed.
-# Sources: project-relative, ~, $HOME or $XDG_RUNTIME_DIR.
+# Sources: project-relative, ~, \$HOME or \$XDG_RUNTIME_DIR.
 # mount = ./data|/data|rw
 # mount = ~/.config/nvim|/home/dev/.config/nvim|ro
 
