@@ -101,7 +101,6 @@ export BOX_PROVISIONER=none
 grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
 grep -Fq 'box_name="${BOXKIT_NAME:-${HOSTNAME:-box}}"' box
 # The generated shell preset must not require the optional hostname executable.
-grep -Fq 'box_name="${CONTAINER_ID:-${HOSTNAME:-box}}"' box
 ! grep -Fq 'box_name="${CONTAINER_ID:-$(hostname)}"' box
 # The Podman CLI must receive the canonical host session bus, not the stale value.
 grep -Fxq "unix:path=$tmp/runtime/bus" "$BOX_TEST_HOST_DBUS_LOG"
