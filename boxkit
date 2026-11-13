@@ -236,7 +236,9 @@ make_container() {
   done
   if [[ -n "$OPEN_DIRECTORY" ]]; then
     args+=(--mount "type=bind,src=$OPEN_DIRECTORY,dst=/home/dev/.boxkit-runtime/open,readonly"
-           --env BOXKIT_OPEN_SOCKET=/home/dev/.boxkit-runtime/open/xdg-open.sock)
+           --env BOXKIT_OPEN_SOCKET=/home/dev/.boxkit-runtime/open/xdg-open.sock
+           --env "BOXKIT_HOST_WORKSPACE=$ROOT"
+           --env "BOXKIT_HOST_HOME=$LOCAL_HOME")
   fi
   if [[ -n "$AGENT_SOCKET" ]]; then
     args+=(--mount "type=bind,src=$AGENT_SOCKET,dst=/home/dev/.boxkit-runtime/ssh-agent.sock,rw"
