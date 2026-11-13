@@ -15,7 +15,259 @@ grep -q '^engine = podman$' boxkit.ini
 grep -q '^image = docker.io/library/archlinux:latest$' boxkit.ini
 grep -q '^dbus_session = true$' boxkit.ini
 grep -q '^audio = true$' boxkit.ini
-grep -q '^host_open = false$' boxkit.ini
+grep -q '^host_open = false
+[[ ! -e Containerfile ]]
+if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
+mkdir -p .boxkit/home
+printf 'keep\n' > .boxkit/home/preserved
+echo 'invalid_setting = true' >> boxkit.ini
+if bash ./box list 2>/dev/null; then echo 'invalid INI accepted' >&2; exit 1; fi
+sed -i '/invalid_setting = true/d' boxkit.ini
+sed -i 's/wayland = true/wayland = false/' boxkit.ini
+sed -i 's/host_open = false/host_open = true/' boxkit.ini
+cat >> boxkit.ini <<'CONFIG'
+
+[packages]
+additional = fd fzf neovim ripgrep make gcc
+
+[setup]
+hook = echo 'Project initialization'
+
+[engine_args]
+create_arg = --hostname=haskell-dev
+create_arg = --env=EXAMPLE=value
+CONFIG
+
+# Provide a real host D-Bus socket for the integration tests.
+mkdir -p "$tmp/runtime"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
+bus_pid=$!
+trap 'kill "$bus_pid" 2>/dev/null || :; rm -rf -- "$tmp"' EXIT
+for attempt in {1..60}; do
+  [[ -S "$tmp/runtime/bus" ]] && break
+  sleep 0.05
+done
+[[ -S "$tmp/runtime/bus" ]]
+export XDG_RUNTIME_DIR="$tmp/runtime"
+mkdir -p "$tmp/runtime/boxkit-open" "$tmp/runtime/pulse" "$HOME/.config/boxkit-test"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/pulse/native" &
+audio_pid=$!
+trap 'kill "$bus_pid" "$audio_pid" 2>/dev/null || :; rm -rf -- "$tmp"' EXIT
+for attempt in {1..60}; do [[ -S "$tmp/runtime/pulse/native" ]] && break; sleep 0.05; done
+[[ -S "$tmp/runtime/pulse/native" ]]
+cat >> boxkit.ini <<'MOUNTS'
+
+[mounts]
+mount = $XDG_RUNTIME_DIR/pulse|/run/host-pulse|ro
+mount = ${XDG_RUNTIME_DIR}/pulse|/run/host-pulse-braced|ro
+mount = $HOME/.config/boxkit-test|/mnt/host-config|ro
+mount = ${HOME}/.config/boxkit-test|/mnt/host-config-braced|ro
+MOUNTS
+# Host address is intentionally different: container must never inherit it.
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$tmp/stale-session-bus"
+
+cat > "$tmp/bin/podman" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$BOX_TEST_LOG"
+printf '%s\n' "${DBUS_SESSION_BUS_ADDRESS:-unset}" >> "$BOX_TEST_HOST_DBUS_LOG"
+case "${1:-}" in
+  create)
+    printf 'container-instance-%s\n' "$(date +%s%N)" > "$BOX_TEST_ID"
+    printf 'running=false\n' > "$BOX_TEST_STATUS"
+    ;;
+  container)
+    [[ "${2:-}" == inspect ]] || exit 2
+    [[ -f "$BOX_TEST_ID" ]] || exit 1
+    if [[ "$*" == *'{{.Id}}'* ]]; then cat "$BOX_TEST_ID"; else
+      if grep -q '^running=true$' "$BOX_TEST_STATUS"; then echo true; else echo false; fi
+    fi
+    ;;
+  start) printf 'running=true\n' > "$BOX_TEST_STATUS";;
+  stop) printf 'running=false\n' > "$BOX_TEST_STATUS";;
+  rm) rm -f "$BOX_TEST_ID" "$BOX_TEST_STATUS";;
+  ps) echo 'NAMES STATUS IMAGE';;
+  exec)
+    if [[ "$*" == *' /bin/sh -c '* && "$*" == *'xdg-open'* ]]; then
+      cat > "$BOX_TEST_CLIENT"
+    fi
+    # Validate every shell payload exactly as Podman will pass it. Checking
+    # only the outer boxkit Bash syntax misses errors inside -c strings.
+    args=("$@")
+    for ((i=0; i<${#args[@]}; i++)); do
+      if [[ "${args[i]}" == /bin/sh && "${args[i+1]:-}" == -c ]]; then
+        /bin/sh -n -c "${args[i+2]}" || exit 1
+      fi
+    done
+    if [[ "$*" == *' /bin/bash /workspace/box _init'* ]]; then
+      for arg in "$@"; do
+        if [[ "$arg" == BOX_CONTAINER_INSTANCE=* ]]; then
+          printf '%s\n' "${arg#BOX_CONTAINER_INSTANCE=}" > .boxkit/state/initialized
+        fi
+      done
+    fi
+    ;;
+esac
+MOCK
+cat > "$tmp/bin/systemctl" <<'MOCK_SYSTEMCTL'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$BOX_TEST_SYSTEMCTL_LOG"
+MOCK_SYSTEMCTL
+chmod +x "$tmp/bin/systemctl"
+export BOX_TEST_SYSTEMCTL_LOG="$tmp/systemctl-log"
+chmod +x "$tmp/bin/podman"
+export BOX_TEST_CLIENT="$tmp/installed-xdg-open"
+export BOX_TEST_LOG="$tmp/podman-log"
+export BOX_TEST_HOST_DBUS_LOG="$tmp/podman-host-dbus-log"
+export BOX_TEST_ID="$tmp/container-id"
+export BOX_TEST_STATUS="$tmp/container-status"
+export BOX_PROVISIONER=none
+export TERM=tmux-256color COLORTERM=truecolor NO_COLOR=1
+export CLICOLOR=1 CLICOLOR_FORCE=0 LS_COLORS='di=01;34'
+./box enter
+[[ -f "$HOME/.local/bin/boxkit-open-server" ]]
+[[ -f "$HOME/.config/systemd/user/boxkit-open.service" ]]
+[[ -f "$HOME/.local/state/boxkit/host-open.manifest" ]]
+[[ -f .boxkit/state/initialized ]]
+[[ -f "$BOX_TEST_CLIENT" ]]
+grep -Fq "BOXKIT_OPEN_SOCKET" "$BOX_TEST_CLIENT"
+# Every interactive entry must source .bashrc (bash -i, not login-only bash -l).
+grep -Fq -- ' /bin/bash -i' "$BOX_TEST_LOG"
+# Neovim and other subprocesses must inherit the same shell as the interactive entry.
+grep -Fq -- '--workdir /workspace --env SHELL=/bin/bash --env TERM=tmux-256color --env COLORTERM=truecolor --env NO_COLOR=1 --env CLICOLOR=1 --env CLICOLOR_FORCE=0 --env LS_COLORS=di=01;34 project-dev /bin/bash -i' "$BOX_TEST_LOG"
+# Terminal environment is determined per invocation, never fixed in Podman create.
+! grep -E '^create .*--env TERM=' "$BOX_TEST_LOG"
+# Changing host terminal settings applies immediately without container recreation.
+export TERM=xterm-256color COLORTERM=
+./box enter
+grep -Fq -- '--env TERM=xterm-256color --env COLORTERM= --env NO_COLOR=1' "$BOX_TEST_LOG"
+unset COLORTERM CLICOLOR_FORCE
+./box exec env
+[[ "$(tail -n 1 "$BOX_TEST_LOG")" == *'--env TERM=xterm-256color'* ]]
+[[ "$(tail -n 1 "$BOX_TEST_LOG")" != *'COLORTERM='* ]]
+[[ "$(tail -n 1 "$BOX_TEST_LOG")" != *'CLICOLOR_FORCE='* ]]
+# Restore host settings for the remaining integration scenarios.
+export TERM=tmux-256color COLORTERM=truecolor CLICOLOR_FORCE=0
+grep -Fq 'box_name="${BOXKIT_NAME:-${HOSTNAME:-box}}"' box
+# The generated shell preset must not require the optional hostname executable.
+! grep -Fq 'box_name="${CONTAINER_ID:-$(hostname)}"' box
+# The Podman CLI must receive the canonical host session bus, not the stale value.
+grep -Fxq "unix:path=$tmp/runtime/bus" "$BOX_TEST_HOST_DBUS_LOG"
+! grep -Fq "unix:path=$tmp/stale-session-bus" "$BOX_TEST_HOST_DBUS_LOG"
+grep -q 'create --name' "$BOX_TEST_LOG"
+grep -Fq -- '--env BOXKIT_NAME=project-dev' "$BOX_TEST_LOG"
+# Child processes launched by both 'enter' and 'exec' inherit this setting.
+grep -Fq -- '--env HOME=/home/dev --env SHELL=/bin/bash' "$BOX_TEST_LOG"
+
+grep -Fq -- '--hostname=haskell-dev' "$BOX_TEST_LOG"
+grep -Fq -- '--env=EXAMPLE=value' "$BOX_TEST_LOG"
+grep -Fq -- 'fd fzf neovim ripgrep make gcc' "$BOX_TEST_LOG"
+# The Arch bootstrap must fully upgrade before installing new packages.
+# Synchronizing only (-Sy) causes OpenSSL SONAME conflicts in older images.
+grep -Fq -- 'pacman -Syu --noconfirm --needed bash bash-completion git curl ca-certificates openssh sudo python libnotify libpulse' "$BOX_TEST_LOG"
+# Sudo is installed with base prerequisites on supported images.
+grep -Fq -- 'apt-get install -y -qq bash bash-completion git curl ca-certificates openssh-client sudo python3 "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'dnf install -y bash bash-completion git curl ca-certificates openssh-clients sudo python3 "$@"' "$BOX_TEST_LOG"
+grep -Fq -- 'apk add --no-cache bash bash-completion git curl ca-certificates openssh-client sudo "$@"' "$BOX_TEST_LOG"
+# The preset Bash configuration enables bash-completion for interactive shells.
+grep -Fq -- '/usr/share/bash-completion/bash_completion' box
+# A rootless container must permit setuid for sudo to elevate internally.
+! grep -Fq -- '--security-opt=no-new-privileges' "$BOX_TEST_LOG"
+# The only passwordless sudo grant is for the container development user.
+grep -Fq -- ' /etc/sudoers.d/boxkit' "$BOX_TEST_LOG"
+grep -Fq -- 'NOPASSWD: ALL' "$BOX_TEST_LOG"
+grep -Fq -- 'chmod 0440 /etc/sudoers.d/boxkit' "$BOX_TEST_LOG"
+if grep -Eq 'pacman -Sy( |$)' "$BOX_TEST_LOG"; then
+  echo 'FAIL: Arch bootstrap performs a partial upgrade' >&2
+  exit 1
+fi
+
+grep -q 'docker.io/library/archlinux:latest' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/pulse,dst=/run/host-pulse,readonly" "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/pulse,dst=/run/host-pulse-braced,readonly" "$BOX_TEST_LOG"
+grep -Fq -- "src=$HOME/.config/boxkit-test,dst=/mnt/host-config,readonly" "$BOX_TEST_LOG"
+grep -Fq -- "src=$HOME/.config/boxkit-test,dst=/mnt/host-config-braced,readonly" "$BOX_TEST_LOG"
+grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/pulse/native,dst=/home/dev/.boxkit-runtime/pulse/native,rw" "$BOX_TEST_LOG"
+grep -Fq -- '--env PULSE_SERVER=unix:/home/dev/.boxkit-runtime/pulse/native' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/bus,dst=/home/dev/.boxkit-runtime/bus" "$BOX_TEST_LOG"
+grep -Fq -- '--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime' "$BOX_TEST_LOG"
+grep -Fq -- "src=$tmp/runtime/boxkit-open,dst=/home/dev/.boxkit-runtime/open,readonly" "$BOX_TEST_LOG"
+grep -Fq -- '--env BOXKIT_OPEN_SOCKET=/home/dev/.boxkit-runtime/open/xdg-open.sock' "$BOX_TEST_LOG"
+grep -q -- '--userns=keep-id' "$BOX_TEST_LOG"
+grep -q -- '--mount type=bind,src=' "$BOX_TEST_LOG"
+grep -q ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG"
+count="$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")"
+./box enter
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+# Stopping and restarting the same container should not require recreation.
+./box stop
+./box enter
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+# A new bus socket inode requires explicit recreation so no stale socket is used.
+kill "$bus_pid" 2>/dev/null || :
+wait "$bus_pid" 2>/dev/null || :
+# Keep the previous socket inode allocated to avoid nondeterministic reuse.
+mv "$tmp/runtime/bus" "$tmp/runtime/bus-old"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
+bus_pid=$!
+for attempt in {1..60}; do [[ -S "$tmp/runtime/bus" ]] && break; sleep 0.05; done
+if ./box enter 2>/dev/null; then echo 'replaced bus socket accepted without recreation' >&2; exit 1; fi
+./box enter -r
+grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
+# Replacing the host audio socket must invalidate an existing container.
+kill "$audio_pid" 2>/dev/null || :
+wait "$audio_pid" 2>/dev/null || :
+mv "$tmp/runtime/pulse/native" "$tmp/runtime/pulse/native-old"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/pulse/native" &
+audio_pid=$!
+for attempt in {1..60}; do [[ -S "$tmp/runtime/pulse/native" ]] && break; sleep 0.05; done
+[[ -S "$tmp/runtime/pulse/native" ]]
+if ./box enter 2>/dev/null; then echo 'replaced audio socket accepted without recreation' >&2; exit 1; fi
+./box enter -r
+# Turning off audio removes the mount and PULSE_SERVER setting after recreation.
+sed -i 's/audio = true/audio = false/' boxkit.ini
+if ./box enter 2>/dev/null; then echo 'changed audio config accepted without recreation' >&2; exit 1; fi
+: > "$BOX_TEST_LOG"
+./box enter -r
+! grep -Fq -- 'dst=/home/dev/.boxkit-runtime/pulse/native' "$BOX_TEST_LOG"
+! grep -Fq -- '--env PULSE_SERVER=' "$BOX_TEST_LOG"
+# Restore default for subsequent checks.
+sed -i 's/audio = false/audio = true/' boxkit.ini
+./box enter -r
+# Shell syntax is not interpreted in create_arg values.
+sed -i 's/create_arg = --hostname=haskell-dev/create_arg = hostname=haskell-dev/' boxkit.ini
+if ./box list 2>/dev/null; then echo 'invalid create_arg accepted' >&2; exit 1; fi
+sed -i 's/create_arg = hostname=haskell-dev/create_arg = --hostname=haskell-dev/' boxkit.ini
+./box exec git --version
+grep -q 'git --version' "$BOX_TEST_LOG"
+./box stop
+grep -q '^running=false$' "$BOX_TEST_STATUS"
+sed -i 's/gpu = false/gpu = true/' boxkit.ini
+if ./box enter 2>/dev/null; then echo 'changed settings accepted without recreation' >&2; exit 1; fi
+sed -i 's/gpu = true/gpu = false/' boxkit.ini
+./box enter -r
+grep -qx 'keep' .boxkit/home/preserved
+./box rm
+[[ ! -f "$BOX_TEST_ID" ]]
+grep -qx 'keep' .boxkit/home/preserved
+echo 'Boxkit regression tests passed'
+
+# Existing installation must be preserved, not reinstalled.
+before="$(sha256sum "$HOME/.local/bin/boxkit-open-server")"
+./box enter
+[[ "$(sha256sum "$HOME/.local/bin/boxkit-open-server")" == "$before" ]]
+[[ "$(grep -c 'enable --now boxkit-open.service' "$BOX_TEST_SYSTEMCTL_LOG")" == 1 ]]
+./box host-open-uninstall
+[[ ! -e "$HOME/.local/bin/boxkit-open-server" ]]
+[[ ! -e "$HOME/.config/systemd/user/boxkit-open.service" ]]
+[[ ! -e "$HOME/.local/state/boxkit/host-open.manifest" ]]
+ boxkit.ini
+# Every supported INI setting is represented in the generated template.
+for setting in 'name =' 'engine =' 'image =' 'home =' 'ssh_agent =' 'wayland =' 'dbus_session =' 'audio =' 'host_open =' 'gpu =' 'mode =' 'publish =' 'mount =' 'additional =' 'hook =' 'create_arg ='; do
+  grep -Fq -- "$setting" boxkit.ini || { echo "missing template setting $setting" >&2; exit 1; }
+done
 [[ ! -e Containerfile ]]
 if bash "$repo/boxkit" init; then echo 'unexpected overwrite' >&2; exit 1; fi
 mkdir -p .boxkit/home
