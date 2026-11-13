@@ -240,9 +240,9 @@ install_host_open_client() {
 
 usage() {
   cat <<'HELP'
-Usage: boxkit init | enter|e [-r] | exec COMMAND... | stop|s | rm | list|ls | host-open-uninstall
+Usage: boxkit init | enter|e [-r] [--workdir PATH] | exec COMMAND... | stop|s | rm | list|ls | host-open-uninstall
   init             Generate boxkit.ini and ./box (never overwrite existing files).
-  enter, e [-r]    Create/start and enter, -r explicitly recreates.
+  enter, e         Create/start and enter; -r recreates; --workdir PATH selects an existing container directory (fallback: /workspace).
   exec COMMAND...  Run a command in an existing running container.
   stop, s          Stop the container.
   rm               Remove the container (preserves project HOME).
@@ -739,7 +739,8 @@ terminal_env_args() {
   done
 }
 main() {
-  local command="${1:-}" recreate=false
+  local command="${1:-}" recreate=false workdir=/workspace requested_workdir=''
+  local workdir_provided=false
   if [[ "$command" == init ]]; then
     [[ "$#" -eq 1 ]] || die "usage: boxkit init"
     create_default "$PWD"
@@ -761,14 +762,63 @@ main() {
   need podman
   case "$command" in
     enter|e)
-      [[ "$#" -le 2 ]] || die "usage: ./box enter [-r]"
-      [[ "$#" -eq 1 || "${2:-}" == -r ]] || die "usage: ./box enter [-r]"
-      [[ "${2:-}" == -r ]] && recreate=true
+      shift
+      while (( $# )); do
+        case "$1" in
+          -r) recreate=true; shift;;
+          --workdir)
+            (( $# >= 2 )) || die 'usage: ./box enter [-r] [--workdir PATH]'
+            [[ "$workdir_provided" == false ]] || die 'duplicate --workdir'
+            requested_workdir="$2"
+            workdir_provided=true
+            shift 2;;
+          --workdir=*)
+            [[ "$workdir_provided" == false ]] || die 'duplicate --workdir'
+            requested_workdir="${1#--workdir=}"
+            workdir_provided=true
+            shift;;
+          *) die 'usage: ./box enter [-r] [--workdir PATH]';;
+        esac
+      done
+      if [[ "$workdir_provided" == true ]]; then
+        [[ "$requested_workdir" == /* && "$requested_workdir" != *
+    exec)
+      shift
+      [[ "$#" -gt 0 ]] || die "usage: ./box exec COMMAND..."
+      container_running || die "container not running; use ./box enter"
+      local -a tty_opts=(-i)
+      if [[ -t 0 && -t 1 ]]; then tty_opts+=(-t); fi
+      terminal_env_args
+      exec podman exec "${tty_opts[@]}" --user "$(id -u):$(id -g)" "${TERMINAL_ENV_ARGS[@]}" "$NAME" "$@"
+      ;;
+    stop|s)
+      if [[ -n "$(container_id)" ]] && container_running; then podman stop "$NAME"; fi
+      ;;
+    rm)
+      if [[ -n "$(container_id)" ]]; then podman rm -f "$NAME"; fi
+      ;;
+    list|ls)
+      podman ps -a --filter label=io.boxkit.managed=true --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+      ;;
+    *) die "unknown command $command";;
+  esac
+}
+main "$@"
+\n'* ]] || die '--workdir requires an absolute path'
+      fi
       ensure_container "$recreate"
       initialize_if_needed
       install_host_open_client
+      if [[ "$workdir_provided" == true ]]; then
+        # Check inside the container: host paths and symlinks may not map 1:1.
+        if podman exec --user "$(id -u):$(id -g)" "$NAME" /usr/bin/test -d "$requested_workdir"; then
+          workdir="$requested_workdir"
+        else
+          warn "directory unavailable inside container: $requested_workdir; using /workspace"
+        fi
+      fi
       terminal_env_args
-      exec podman exec -it --user "$(id -u):$(id -g)" --workdir /workspace --env SHELL=/bin/bash "${TERMINAL_ENV_ARGS[@]}" "$NAME" /bin/bash -i
+      exec podman exec -it --user "$(id -u):$(id -g)" --workdir "$workdir" --env SHELL=/bin/bash "${TERMINAL_ENV_ARGS[@]}" "$NAME" /bin/bash -i
       ;;
     exec)
       shift
