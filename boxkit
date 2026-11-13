@@ -282,7 +282,9 @@ elif command -v apk >/dev/null 2>&1; then
 elif command -v dnf >/dev/null 2>&1; then
   dnf install -y bash git curl ca-certificates openssh-clients "$@"
 elif command -v pacman >/dev/null 2>&1; then
-  # Synchronize the whole Arch system before installing packages; -Sy alone\n  # creates unsupported partial upgrades against an older image.\n  pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh "$@"
+  # Synchronize the whole Arch system before installing packages; -Sy alone
+  # creates unsupported partial upgrades against an older image.
+  pacman -Syu --noconfirm --needed bash git curl ca-certificates openssh "$@"
 else
   echo "Unsupported image package manager; supply bash git curl and ssh manually" >&2
   exit 1
