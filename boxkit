@@ -269,6 +269,7 @@ home = .boxkit/home
 ssh_agent = true
 wayland = true
 dbus_session = true
+audio = true
 host_open = false
 gpu = false
 
@@ -297,7 +298,7 @@ EOF
   printf 'Created %s/boxkit.ini and %s/box\n' "$dst" "$dst"
 }
 NAME='' ENGINE=podman IMAGE='' HOME_PATH=.boxkit/home
-SSH_AGENT=true WAYLAND=true DBUS_SESSION=true HOST_OPEN=false GPU=false NETWORK=private
+SSH_AGENT=true WAYLAND=true DBUS_SESSION=true AUDIO=true HOST_OPEN=false GPU=false NETWORK=private
 declare -a MOUNTS=() PORTS=() PACKAGES=() HOOKS=() CREATE_ARGS=()
 load_config() {
   local file="$ROOT/boxkit.ini" section='' line key value
@@ -317,6 +318,7 @@ load_config() {
       integration.ssh_agent) SSH_AGENT="$value";;
       integration.wayland) WAYLAND="$value";;
       integration.dbus_session) DBUS_SESSION="$value";;
+      integration.audio) AUDIO="$value";;
       integration.host_open) HOST_OPEN="$value";;
       integration.gpu) GPU="$value";;
       network.mode) NETWORK="$value";;
@@ -339,7 +341,7 @@ load_config() {
   [[ "$NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || die "invalid container name"
   [[ -n "$IMAGE" ]] || die "container.image required"
   [[ "$ENGINE" == podman ]] || die "engine '$ENGINE' not supported yet (currently: podman)"
-  valid_bool "$SSH_AGENT"; valid_bool "$WAYLAND"; valid_bool "$DBUS_SESSION"; valid_bool "$HOST_OPEN"; valid_bool "$GPU"
+  valid_bool "$SSH_AGENT"; valid_bool "$WAYLAND"; valid_bool "$DBUS_SESSION"; valid_bool "$AUDIO"; valid_bool "$HOST_OPEN"; valid_bool "$GPU"
   local pkg
   for pkg in "${PACKAGES[@]}"; do
     [[ "$pkg" =~ ^[a-zA-Z0-9][a-zA-Z0-9.+_@:-]*$ ]] || die "invalid package name: $pkg"
@@ -393,7 +395,7 @@ normalize_host_session_bus() {
 }
 detect_integrations() {
   local socket='' wd='' rt=''
-  AGENT_SOCKET='' WAYLAND_SOCKET='' DBUS_SOCKET='' OPEN_DIRECTORY=''
+  AGENT_SOCKET='' WAYLAND_SOCKET='' DBUS_SOCKET='' AUDIO_SOCKET='' OPEN_DIRECTORY=''
   if [[ "$HOST_OPEN" == true ]]; then
     [[ -n "${XDG_RUNTIME_DIR:-}" ]] || die 'host_open requires XDG_RUNTIME_DIR'
     install_host_open
@@ -417,6 +419,15 @@ detect_integrations() {
     [[ -n "$wd" && -S "$socket" ]] || die "Wayland enabled but socket unavailable: $socket"
     WAYLAND_SOCKET="$(readlink -f -- "$socket")"
   fi
+  if [[ "$AUDIO" == true ]]; then
+    # PipeWire's pipewire-pulse and PulseAudio both expose this native socket.
+    socket="${XDG_RUNTIME_DIR:-}/pulse/native"
+    if [[ -n "${XDG_RUNTIME_DIR:-}" && -S "$socket" ]]; then
+      AUDIO_SOCKET="$(readlink -f -- "$socket")"
+    else
+      warn "PulseAudio-compatible socket unavailable; audio integration disabled for this container instance"
+    fi
+  fi
   if [[ "$DBUS_SESSION" == true ]]; then
     # The session bus usually lives in the host XDG runtime directory. An
     # explicit unix:path= address may override that location.
@@ -436,8 +447,8 @@ detect_integrations() {
 fingerprint() {
   local path
   { cat "$ROOT/boxkit.ini"
-    printf '\n%s\n%s\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET" "$OPEN_DIRECTORY"
-    for path in "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET"; do
+    printf '\n%s\n%s\n%s\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET" "$AUDIO_SOCKET" "$OPEN_DIRECTORY"
+    for path in "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET" "$AUDIO_SOCKET"; do
       if [[ -n "$path" ]]; then stat -Lc '%d:%i' -- "$path"; fi
     done
   } | sha256sum | awk '{print $1}'
@@ -488,6 +499,10 @@ make_container() {
     args+=(--mount "type=bind,src=$WAYLAND_SOCKET,dst=/home/dev/.boxkit-runtime/wayland-0,rw"
            --env WAYLAND_DISPLAY=wayland-0)
   fi
+  if [[ -n "$AUDIO_SOCKET" ]]; then
+    args+=(--mount "type=bind,src=$AUDIO_SOCKET,dst=/home/dev/.boxkit-runtime/pulse/native,rw"
+           --env PULSE_SERVER=unix:/home/dev/.boxkit-runtime/pulse/native)
+  fi
   if [[ -n "$DBUS_SOCKET" ]]; then
     args+=(--mount "type=bind,src=$DBUS_SOCKET,dst=/home/dev/.boxkit-runtime/bus,rw"
            --env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus)
@@ -495,7 +510,7 @@ make_container() {
     # Never leave a stale host address pointing to an inaccessible socket.
     args+=(--env DBUS_SESSION_BUS_ADDRESS=)
   fi
-  if [[ -n "$WAYLAND_SOCKET" || -n "$DBUS_SOCKET" ]]; then
+  if [[ -n "$WAYLAND_SOCKET" || -n "$DBUS_SOCKET" || -n "$AUDIO_SOCKET" ]]; then
     args+=(--env XDG_RUNTIME_DIR=/home/dev/.boxkit-runtime)
   fi
   # Engine-specific escape hatch; applied at creation, before image/command.
