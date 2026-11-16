@@ -231,18 +231,22 @@ count="$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")"
 ./box stop
 ./box enter
 [[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
-# A new bus socket inode requires explicit recreation so no stale socket is used.
+# Replacing a socket in a running container requires an explicit stop, but
+# never requires removing/recreating the container.
+id_before="$(cat "$BOX_TEST_ID")"
 kill "$bus_pid" 2>/dev/null || :
 wait "$bus_pid" 2>/dev/null || :
-# Keep the previous socket inode allocated to avoid nondeterministic reuse.
 mv "$tmp/runtime/bus" "$tmp/runtime/bus-old"
 python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(90)' "$tmp/runtime/bus" &
 bus_pid=$!
 for attempt in {1..60}; do [[ -S "$tmp/runtime/bus" ]] && break; sleep 0.05; done
-if ./box enter 2>/dev/null; then echo 'replaced bus socket accepted without recreation' >&2; exit 1; fi
-./box enter -r
-grep -Fq -- '--env DBUS_SESSION_BUS_ADDRESS=unix:path=/home/dev/.boxkit-runtime/bus' "$BOX_TEST_LOG"
-# Replacing the host audio socket must invalidate an existing container.
+if ./box enter 2>/dev/null; then echo 'running container accepted stale D-Bus socket' >&2; exit 1; fi
+./box stop
+./box enter
+[[ "$(cat "$BOX_TEST_ID")" == "$id_before" ]]
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+# A stopped container should remount a replaced audio socket at next start.
+./box stop
 kill "$audio_pid" 2>/dev/null || :
 wait "$audio_pid" 2>/dev/null || :
 mv "$tmp/runtime/pulse/native" "$tmp/runtime/pulse/native-old"
@@ -250,8 +254,18 @@ python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.
 audio_pid=$!
 for attempt in {1..60}; do [[ -S "$tmp/runtime/pulse/native" ]] && break; sleep 0.05; done
 [[ -S "$tmp/runtime/pulse/native" ]]
-if ./box enter 2>/dev/null; then echo 'replaced audio socket accepted without recreation' >&2; exit 1; fi
-./box enter -r
+./box enter
+[[ "$(cat "$BOX_TEST_ID")" == "$id_before" ]]
+[[ "$(grep -c ' /bin/bash /workspace/box _init' "$BOX_TEST_LOG")" == "$count" ]]
+# Simulate a legacy state from an older generated box. Matching legacy state
+# migrates in place, whereas changed legacy fingerprint remains conservative.
+rm -f .boxkit/state/config-fingerprint .boxkit/state/socket-fingerprint
+legacy_hash="$({ cat boxkit.ini; printf '\\n%s\\n%s\\n%s\\n%s\\n%s\\n' '' '' "$tmp/runtime/bus" "$tmp/runtime/pulse/native" "$tmp/runtime/boxkit-open"; stat -Lc '%d:%i' "$tmp/runtime/bus" "$tmp/runtime/pulse/native"; } | sha256sum | awk '{print $1}')"
+printf '%s\\n' "$legacy_hash" > .boxkit/state/runtime-fingerprint
+./box enter
+[[ -f .boxkit/state/config-fingerprint && -f .boxkit/state/socket-fingerprint ]]
+[[ ! -f .boxkit/state/runtime-fingerprint ]]
+[[ "$(cat "$BOX_TEST_ID")" == "$id_before" ]]
 # Turning off audio removes the mount and PULSE_SERVER setting after recreation.
 sed -i 's/audio = true/audio = false/' boxkit.ini
 if ./box enter 2>/dev/null; then echo 'changed audio config accepted without recreation' >&2; exit 1; fi
