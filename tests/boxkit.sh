@@ -260,8 +260,8 @@ for attempt in {1..60}; do [[ -S "$tmp/runtime/pulse/native" ]] && break; sleep 
 # Simulate a legacy state from an older generated box. Matching legacy state
 # migrates in place, whereas changed legacy fingerprint remains conservative.
 rm -f .boxkit/state/config-fingerprint .boxkit/state/socket-fingerprint
-legacy_hash="$({ cat boxkit.ini; printf '\\n%s\\n%s\\n%s\\n%s\\n%s\\n' '' '' "$tmp/runtime/bus" "$tmp/runtime/pulse/native" "$tmp/runtime/boxkit-open"; stat -Lc '%d:%i' "$tmp/runtime/bus" "$tmp/runtime/pulse/native"; } | sha256sum | awk '{print $1}')"
-printf '%s\\n' "$legacy_hash" > .boxkit/state/runtime-fingerprint
+legacy_hash="$({ cat boxkit.ini; printf '\n%s\n%s\n%s\n%s\n%s\n' '' '' "$tmp/runtime/bus" "$tmp/runtime/pulse/native" "$tmp/runtime/boxkit-open"; stat -Lc '%d:%i' "$tmp/runtime/bus" "$tmp/runtime/pulse/native"; } | sha256sum | awk '{print $1}')"
+printf '%s\n' "$legacy_hash" > .boxkit/state/runtime-fingerprint
 ./box enter
 [[ -f .boxkit/state/config-fingerprint && -f .boxkit/state/socket-fingerprint ]]
 [[ ! -f .boxkit/state/runtime-fingerprint ]]
