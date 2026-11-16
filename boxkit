@@ -464,7 +464,25 @@ detect_integrations() {
     fi
   fi
 }
-fingerprint() {
+# Mount-source paths and configuration determine the immutable Podman create spec.
+# A socket inode is runtime state: Podman rebinds it at each container start.
+config_fingerprint() {
+  { cat "$ROOT/boxkit.ini"
+    printf '\n%s\n%s\n%s\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET" "$AUDIO_SOCKET" "$OPEN_DIRECTORY"
+  } | sha256sum | awk '{print $1}'
+}
+socket_fingerprint() {
+  local path
+  {
+    for path in "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET" "$AUDIO_SOCKET"; do
+      if [[ -n "$path" ]]; then stat -Lc '%d:%i' -- "$path"; fi
+    done
+  } | sha256sum | awk '{print $1}'
+}
+# Older generated scripts persisted only a combined fingerprint. Accept a
+# matching legacy state without recreation; mismatches cannot safely distinguish
+# an old config change from a socket replacement.
+legacy_fingerprint() {
   local path
   { cat "$ROOT/boxkit.ini"
     printf '\n%s\n%s\n%s\n%s\n%s\n' "$AGENT_SOCKET" "$WAYLAND_SOCKET" "$DBUS_SOCKET" "$AUDIO_SOCKET" "$OPEN_DIRECTORY"
@@ -472,6 +490,11 @@ fingerprint() {
       if [[ -n "$path" ]]; then stat -Lc '%d:%i' -- "$path"; fi
     done
   } | sha256sum | awk '{print $1}'
+}
+save_fingerprints() {
+  config_fingerprint > "$STATE_DIR/config-fingerprint"
+  socket_fingerprint > "$STATE_DIR/socket-fingerprint"
+  rm -f -- "$STATE_DIR/runtime-fingerprint"
 }
 container_id() {
   podman container inspect --format '{{.Id}}' "$NAME" 2>/dev/null || :
@@ -544,26 +567,44 @@ make_container() {
     args+=(--device /dev/dri:/dev/dri --group-add keep-groups)
   fi
   podman "${args[@]}" --entrypoint /bin/sh "$IMAGE" -c 'while :; do sleep 3600; done' >/dev/null
-  fingerprint > "$STATE_DIR/runtime-fingerprint"
+  save_fingerprints
 }
 ensure_container() {
-  local recreate="$1" id actual expected
+  local recreate="$1" id actual expected current_socket previous_socket
   detect_integrations
-  expected="$(fingerprint)"
+  expected="$(config_fingerprint)"
+  current_socket="$(socket_fingerprint)"
   id="$(container_id)"
   if [[ "$recreate" == true && -n "$id" ]]; then
     podman rm -f "$NAME" >/dev/null
     id=''
   fi
   if [[ -n "$id" ]]; then
-    actual="$(cat "$STATE_DIR/runtime-fingerprint" 2>/dev/null || :)"
-    if [[ "$actual" != "$expected" ]]; then
-      die "container configuration or socket changed; run './box enter -r' to recreate (HOME preserved)"
+    if [[ ! -f "$STATE_DIR/config-fingerprint" ]]; then
+      # One-time upgrade from the legacy combined fingerprint. If the old
+      # fingerprint differs, an old configuration change cannot be excluded.
+      actual="$(cat "$STATE_DIR/runtime-fingerprint" 2>/dev/null || :)"
+      [[ -n "$actual" && "$actual" == "$(legacy_fingerprint)" ]] ||
+        die "legacy container configuration or socket changed; run './box enter -r' to recreate (HOME preserved)"
+      save_fingerprints
+    fi
+    actual="$(cat "$STATE_DIR/config-fingerprint" 2>/dev/null || :)"
+    [[ "$actual" == "$expected" ]] ||
+      die "container configuration or socket path changed; run './box enter -r' to recreate (HOME preserved)"
+    previous_socket="$(cat "$STATE_DIR/socket-fingerprint" 2>/dev/null || :)"
+    if container_running; then
+      if [[ "$previous_socket" != "$current_socket" ]]; then
+        die "host socket inode changed while container is running; use './box stop' then './box enter' to remount (or './box enter -r' to recreate)"
+      fi
+      return 0
     fi
   else
     make_container
   fi
-  if ! container_running; then podman start "$NAME" >/dev/null; fi
+  # Starting a stopped container recreates its file bind mounts at current
+  # paths, so changed socket inodes do not require container recreation.
+  podman start "$NAME" >/dev/null
+  socket_fingerprint > "$STATE_DIR/socket-fingerprint"
 }
 bootstrap_packages() {
   local bootstrap
