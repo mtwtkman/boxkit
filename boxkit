@@ -298,7 +298,7 @@ mode = private
 [packages]
 # Additional packages installed at first initialization/recreation.
 # Arch bootstrap already installs libnotify and libpulse clients.
-additional = wl-clipboard fd fzf git neovim ripgrep make gcc
+additional = wl-clipboard fd fzf git neovim ripgrep make gcc less
 
 [setup]
 # Optional shell hook as container user at first initialization; repeatable.
